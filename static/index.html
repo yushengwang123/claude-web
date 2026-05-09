@@ -608,7 +608,7 @@
       <datalist id="cwdList"></datalist>
     </div>
     <select id="permSelect" class="text-xs px-2.5 py-1.5" title="工具权限策略">
-      <option value="free">🔓 自由</option>
+      <option value="free">🔓 CLI 默认</option>
       <option value="acceptEdits">✏️ 允许编辑</option>
       <option value="plan">📋 计划</option>
       <option value="readonly">🔒 只读</option>
@@ -760,8 +760,13 @@
       <div class="text-lg font-semibold">⚙️ 自定义工具权限</div>
       <button data-close class="text-xl">×</button>
     </div>
-    <div class="text-xs text-gray-500 mb-3">勾选允许 Claude 使用的工具（未勾选则禁用）。</div>
+    <div class="text-xs text-gray-500 mb-3">勾选预先放行的工具。Web 版不能在运行中批准权限，MCP 工具请提前加入白名单。</div>
     <div id="toolCheckboxes" class="grid grid-cols-2 gap-2 text-sm"></div>
+    <div class="mt-4">
+      <label for="extraToolsInput" class="block text-sm font-medium mb-1">额外工具名（MCP / 自定义）</label>
+      <textarea id="extraToolsInput" rows="4" placeholder="每行一个，例如：&#10;mcp__github__search_code" class="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-700 rounded-lg text-sm"></textarea>
+      <div class="text-xs text-gray-500 mt-1">支持逗号、空格或换行分隔。</div>
+    </div>
     <div class="mt-4 flex gap-2">
       <button id="saveTools" class="px-4 py-1.5 bg-orange-500 hover:bg-orange-600 text-white rounded text-sm">保存</button>
       <button id="selectAllTools" class="px-3 py-1.5 bg-gray-100 dark:bg-slate-700 rounded text-sm">全选</button>
@@ -863,6 +868,8 @@ let lastStreamingMsgId = null;
 // Per-turn tracking (for edit/regenerate/restore)
 let currentUserIndex = 0;
 let lastUserIndex = -1;
+const SESSION_PERMISSION_OVERRIDES_KEY = 'sessionPermissionOverrides';
+const sessionPermissionOverrides = LS.get(SESSION_PERMISSION_OVERRIDES_KEY, {});
 
 // ===== dom refs =====
 const $ = (id) => document.getElementById(id);
@@ -889,6 +896,7 @@ const modelSelect = $('modelSelect');
 const permSelect = $('permSelect');
 const toolsModal = $('toolsModal');
 const toolCheckboxes = $('toolCheckboxes');
+const extraToolsInput = $('extraToolsInput');
 const saveTools = $('saveTools');
 const selectAllTools = $('selectAllTools');
 const clearTools = $('clearTools');
@@ -933,6 +941,61 @@ function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 function pathBasename(p) { const i = p.lastIndexOf('/'); return i >= 0 ? p.slice(i+1) : p; }
+function normalizeToolNames(list) {
+  return Array.from(new Set((Array.isArray(list) ? list : [])
+    .map(v => String(v || '').trim())
+    .filter(Boolean)));
+}
+function parseToolNames(text) {
+  return normalizeToolNames(String(text || '').split(/[\s,]+/));
+}
+function persistSessionPermissionOverrides() {
+  LS.set(SESSION_PERMISSION_OVERRIDES_KEY, sessionPermissionOverrides);
+}
+function getStoredCustomTools() {
+  return normalizeToolNames(LS.get('customAllowedTools', ALL_TOOLS));
+}
+function getSessionPermissionOverride(targetSessionId = sessionId) {
+  const raw = (targetSessionId && sessionPermissionOverrides[targetSessionId]) || {};
+  return {
+    mode: raw.mode === 'bypassPermissions' ? 'bypassPermissions' : null,
+    extraAllowedTools: normalizeToolNames(raw.extraAllowedTools || []),
+  };
+}
+function setSessionPermissionOverride(targetSessionId, patch) {
+  if (!targetSessionId) return;
+  const current = getSessionPermissionOverride(targetSessionId);
+  const next = {
+    mode: patch.mode !== undefined ? patch.mode : current.mode,
+    extraAllowedTools: patch.extraAllowedTools !== undefined ? normalizeToolNames(patch.extraAllowedTools) : current.extraAllowedTools,
+  };
+  if (!next.mode && next.extraAllowedTools.length === 0) delete sessionPermissionOverrides[targetSessionId];
+  else sessionPermissionOverrides[targetSessionId] = next;
+  persistSessionPermissionOverrides();
+}
+function addSessionAllowedTool(targetSessionId, toolName) {
+  if (!targetSessionId || !toolName) return;
+  const current = getSessionPermissionOverride(targetSessionId);
+  setSessionPermissionOverride(targetSessionId, {
+    extraAllowedTools: [...current.extraAllowedTools, toolName],
+  });
+}
+function setSessionBypassPermissions(targetSessionId, enabled) {
+  if (!targetSessionId) return;
+  const current = getSessionPermissionOverride(targetSessionId);
+  setSessionPermissionOverride(targetSessionId, {
+    mode: enabled ? 'bypassPermissions' : null,
+    extraAllowedTools: current.extraAllowedTools,
+  });
+}
+function buildCliContinuePrompt(toolName) {
+  const lines = [
+    '请继续刚才的任务。',
+    '这个任务在 claude-web 里因为无法运行中批准工具权限而中断。',
+  ];
+  if (toolName) lines.push(`请允许使用工具 ${toolName}。`);
+  return lines.join('\n');
+}
 function formatTime(ts) {
   const d = new Date(ts * 1000), now = new Date();
   if (d.toDateString() === now.toDateString()) return d.toTimeString().slice(0,5);
@@ -1354,6 +1417,131 @@ function addErrorBlock(message) {
   el.textContent = '错误: ' + message;
   chatInner.appendChild(el);
 }
+async function retryTurnWithCurrentPermissions(targetSessionId, userIdx) {
+  if (!targetSessionId) { alert('当前没有会话'); return; }
+  if (currentController) {
+    alert('请先等待当前回复完成，或先停止当前生成。');
+    return;
+  }
+  if (userIdx < 0) {
+    alert('没有找到需要重试的那一轮。');
+    return;
+  }
+  if (userIdx !== currentUserIndex - 1 && !confirm('这会从这一轮重新继续，并丢弃它后面的对话展示。是否继续？')) {
+    return;
+  }
+  try {
+    const r = await fetch(`/api/sessions/${targetSessionId}/prepare-inline-edit`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ event_index: userIdx }),
+    });
+    if (!r.ok) {
+      const msg = await r.text();
+      alert('重试失败: ' + msg);
+      await loadSession(targetSessionId);
+      return;
+    }
+    const data = await r.json();
+    if (data.cwd) cwdInput.value = data.cwd;
+    await loadSession(targetSessionId);
+    await sendRaw(data.sent_message, data.display_message, data.images || []);
+  } catch (e) {
+    alert('重试失败: ' + e.message);
+    try { await loadSession(targetSessionId); } catch {}
+  }
+}
+function addPermissionErrorBlock(container, info) {
+  if (!container) container = newAssistantBubble();
+  const targetSessionId = sessionId;
+  const userIdx = Number(container.parentElement?.dataset.userIndex ?? lastUserIndex);
+  const card = document.createElement('div');
+  card.className = 'rounded-xl border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 px-4 py-3 text-sm';
+
+  const title = document.createElement('div');
+  title.className = 'font-semibold text-amber-900 dark:text-amber-200';
+  title.textContent = '此轮卡在工具权限审批';
+  card.appendChild(title);
+
+  const body = document.createElement('div');
+  body.className = 'mt-1 whitespace-pre-wrap text-amber-900 dark:text-amber-100';
+  body.textContent = info.message || 'Claude 请求工具权限，但当前 Web UI 无法在运行中批准。';
+  card.appendChild(body);
+
+  if (info.tool_name) {
+    const toolLine = document.createElement('div');
+    toolLine.className = 'mt-2 text-xs text-amber-700 dark:text-amber-300';
+    toolLine.textContent = `请求的工具: ${info.tool_name}`;
+    card.appendChild(toolLine);
+  }
+
+  const hint = document.createElement('div');
+  hint.className = 'mt-2 text-xs text-amber-700 dark:text-amber-300';
+  hint.textContent = info.hint || '请预先放行工具后重试本轮，或改用 Claude Code CLI。';
+  card.appendChild(hint);
+
+  const actions = document.createElement('div');
+  actions.className = 'mt-3 flex flex-wrap gap-2';
+
+  const setBusy = (busy) => {
+    actions.querySelectorAll('button').forEach(btn => { btn.disabled = busy; });
+    actions.classList.toggle('opacity-70', busy);
+  };
+  const makeActionBtn = (label, className, handler) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = className;
+    btn.textContent = label;
+    btn.addEventListener('click', async () => {
+      setBusy(true);
+      try {
+        await handler(btn);
+      } finally {
+        setBusy(false);
+      }
+    });
+    actions.appendChild(btn);
+  };
+
+  if (info.tool_name) {
+    makeActionBtn(
+      `允许 ${info.tool_name} 并重试本轮`,
+      'px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs',
+      async () => {
+        addSessionAllowedTool(targetSessionId, info.tool_name);
+        addSystemInfo(`已在本会话临时放行 ${info.tool_name}，正在重试本轮`);
+        await retryTurnWithCurrentPermissions(targetSessionId, userIdx);
+      },
+    );
+  }
+
+  makeActionBtn(
+    '本会话全放行并重试',
+    'px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white text-xs',
+    async () => {
+      if (!confirm('这会把当前会话切到本机全放行模式，仅建议本地自用且确认任务可信时使用。继续吗？')) return;
+      setSessionBypassPermissions(targetSessionId, true);
+      addSystemInfo('当前会话已临时切到本机全放行，正在重试本轮');
+      await retryTurnWithCurrentPermissions(targetSessionId, userIdx);
+    },
+  );
+
+  makeActionBtn(
+    '复制 CLI 继续提示',
+    'px-3 py-1.5 rounded-lg bg-white/80 dark:bg-slate-800 border border-amber-300 dark:border-amber-700 text-xs',
+    async (btn) => {
+      await navigator.clipboard.writeText(buildCliContinuePrompt(info.tool_name || ''));
+      const orig = btn.textContent;
+      btn.textContent = '已复制';
+      setTimeout(() => { btn.textContent = orig; }, 1200);
+    },
+  );
+
+  card.appendChild(actions);
+  container.appendChild(card);
+  scrollBottom();
+  return container;
+}
 
 // ===== TodoWrite live panel =====
 let todoCollapsed = false;
@@ -1464,6 +1652,10 @@ function handleEvent(obj, container) {
     }
     return container;
   }
+  if (obj.type === 'permission_error') {
+    hideThinking(container);
+    return addPermissionErrorBlock(container, obj);
+  }
   if (obj.type === 'error') { addErrorBlock(obj.message); return container; }
   if (obj.type === 'done') return container;
   if (obj.type === 'raw') { addSystemInfo(obj.text); return container; }
@@ -1507,6 +1699,18 @@ function handleEvent(obj, container) {
     const dur = obj.duration_ms !== undefined ? ` · ${(obj.duration_ms/1000).toFixed(1)}s` : '';
     addSystemInfo(`完成${dur}${cost}`);
     refreshStats();
+    const denials = obj.permission_denials;
+    if (Array.isArray(denials) && denials.length > 0) {
+      const toolNames = [...new Set(denials.map(d => d.tool_name).filter(Boolean))];
+      const info = {
+        type: 'permission_error',
+        message: `Claude 尝试使用 ${toolNames.join(', ')} 工具但被权限拒绝（共 ${denials.length} 次）。`,
+        tool_name: toolNames[0] || null,
+        hint: '请点击下方按钮放行工具后重试，或在顶部权限策略中切换为"自由"模式。',
+      };
+      hideThinking(container);
+      return addPermissionErrorBlock(container, info);
+    }
     return container;
   }
   return container;
@@ -1903,8 +2107,18 @@ function buildPermissionPayload() {
   else if (mode === 'acceptEdits') out.permission_mode = 'acceptEdits';
   else if (mode === 'readonly') out.disallowed_tools = ['Bash', 'Write', 'Edit', 'MultiEdit', 'NotebookEdit'];
   else if (mode === 'custom') {
-    const list = LS.get('customAllowedTools', null);
+    const list = getStoredCustomTools();
     if (Array.isArray(list) && list.length > 0) out.allowed_tools = list;
+  }
+  const override = getSessionPermissionOverride(sessionId);
+  if (override.mode === 'bypassPermissions') {
+    out.permission_mode = 'bypassPermissions';
+    out.allowed_tools = null;
+    out.disallowed_tools = null;
+    return out;
+  }
+  if (override.extraAllowedTools.length > 0) {
+    out.allowed_tools = normalizeToolNames([...(out.allowed_tools || []), ...override.extraAllowedTools]);
   }
   return out;
 }
@@ -2388,18 +2602,22 @@ permSelect.addEventListener('change', () => {
 });
 
 function openCustomToolsModal() {
-  const current = new Set(LS.get('customAllowedTools', ALL_TOOLS));
+  const currentList = getStoredCustomTools();
+  const current = new Set(currentList);
+  const extra = currentList.filter(t => !ALL_TOOLS.includes(t));
   toolCheckboxes.innerHTML = ALL_TOOLS.map(t => `
     <label class="inline-flex items-center gap-2">
       <input type="checkbox" value="${t}" ${current.has(t) ? 'checked' : ''} />
       <span>${t}</span>
     </label>
   `).join('');
+  extraToolsInput.value = extra.join('\n');
   openModal(toolsModal);
 }
 saveTools.addEventListener('click', () => {
   const picked = Array.from(toolCheckboxes.querySelectorAll('input:checked')).map(i => i.value);
-  LS.set('customAllowedTools', picked);
+  const extras = parseToolNames(extraToolsInput.value);
+  LS.set('customAllowedTools', normalizeToolNames([...picked, ...extras]));
   closeModal(toolsModal);
 });
 selectAllTools.addEventListener('click', () => {
@@ -2407,6 +2625,7 @@ selectAllTools.addEventListener('click', () => {
 });
 clearTools.addEventListener('click', () => {
   toolCheckboxes.querySelectorAll('input').forEach(i => { i.checked = false; });
+  extraToolsInput.value = '';
 });
 
 // ===== prompts =====

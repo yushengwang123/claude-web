@@ -33,6 +33,10 @@ UPLOADS_DIR.mkdir(exist_ok=True)
 IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"}
 MAX_UPLOAD_MB = 20
 IGNORED_DIRS = {".git", "node_modules", ".venv", "venv", "__pycache__", ".next", "dist", "build", ".cache", ".idea", ".vscode"}
+KNOWN_TOOL_NAMES = {
+    "Bash", "Read", "Write", "Edit", "MultiEdit", "Grep", "Glob",
+    "WebFetch", "WebSearch", "TodoWrite", "Task", "NotebookEdit",
+}
 
 app = FastAPI(title="Claude Code Web")
 
@@ -229,6 +233,48 @@ def build_args(
     if disallowed_tools:
         args += ["--disallowed-tools", ",".join(disallowed_tools)]
     return args
+
+
+def extract_tool_name(text: str) -> Optional[str]:
+    mcp_match = re.search(r"\bmcp__[A-Za-z0-9_:-]+(?:__[A-Za-z0-9_:-]+)*\b", text)
+    if mcp_match:
+        return mcp_match.group(0)
+
+    for tool in KNOWN_TOOL_NAMES:
+        if re.search(rf"\b{re.escape(tool)}\b", text):
+            return tool
+
+    patterns = [
+        r"(?:MCP tool|mcp tool|tool)\s+[\"'`]?([A-Za-z][A-Za-z0-9_:-]{1,80})[\"'`]?",
+        r"[\"'`]([A-Za-z][A-Za-z0-9_:-]{1,80})[\"'`]\s+(?:tool|Tool|MCP tool|mcp tool)",
+    ]
+    stop_words = {"approval", "permission", "tool", "tools", "mcp", "required", "requires", "non-interactive"}
+    for pattern in patterns:
+        m = re.search(pattern, text)
+        if not m:
+            continue
+        candidate = m.group(1).strip()
+        if candidate.lower() not in stop_words:
+            return candidate
+    return None
+
+
+def classify_claude_error(message: str) -> dict:
+    text = (message or "").strip() or "claude exited with error"
+    lower = text.lower()
+    tool_name = extract_tool_name(text)
+    permissionish = any(k in lower for k in (
+        "requires approval", "approval required", "needs approval", "approval",
+        "cannot prompt", "non-interactive", "not allowed", "permission denied",
+    ))
+    if ("permission" in lower and ("tool" in lower or "mcp" in lower or tool_name)) or (permissionish and ("tool" in lower or "mcp" in lower or tool_name)):
+        return {
+            "type": "permission_error",
+            "message": text,
+            "tool_name": tool_name,
+            "hint": "当前 Web UI 不支持运行中批准工具权限；请预先放行工具后重试本轮，或改用 Claude Code CLI。",
+        }
+    return {"type": "error", "message": text}
 
 
 def compose_message(message: str, images: Optional[List[str]]) -> str:
@@ -476,12 +522,11 @@ async def chat(req: ChatRequest):
             if process.stderr is not None:
                 err = await process.stderr.read()
             if rc != 0:
-                err_event = {
-                    "type": "error",
-                    "message": err.decode("utf-8", errors="replace") or f"claude exited with code {rc}",
-                }
+                err_event = classify_claude_error(
+                    err.decode("utf-8", errors="replace") or f"claude exited with code {rc}"
+                )
                 append_event(session_id, err_event)
-                yield f"data: {json.dumps(err_event)}\n\n"
+                yield f"data: {json.dumps(err_event, ensure_ascii=False)}\n\n"
         finally:
             _running_processes.pop(session_id, None)
 
