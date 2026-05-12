@@ -661,7 +661,7 @@
   <footer class="px-4 pt-2 pb-5" style="background:var(--bg);">
     <form id="form" class="max-w-3xl mx-auto relative">
       <input type="file" id="fileInput" accept="image/*" multiple class="hidden" />
-      <input type="file" id="docInput" accept=".pdf,.docx,.csv,.tsv,.txt,.md,.json,.log,.xlsx,.xls" multiple class="hidden" />
+      <input type="file" id="docInput" multiple class="hidden" />
       <div class="composer" id="composer">
         <textarea id="input" rows="1" placeholder="输入消息，让 Claude 帮你..."
           class="composer-textarea"></textarea>
@@ -670,7 +670,7 @@
             <button type="button" id="attachBtn" class="composer-btn" title="上传图片 (支持粘贴/拖拽)">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21 12-8.5 8.5a5 5 0 0 1-7-7L13 5a3.5 3.5 0 0 1 5 5L9.5 18.5a2 2 0 0 1-3-3L15 7"/></svg>
             </button>
-            <button type="button" id="docAttachBtn" class="composer-btn" title="上传文档 (PDF/Word/Excel/CSV/TXT/MD)">
+            <button type="button" id="docAttachBtn" class="composer-btn" title="上传文件 (支持 HTML/源码/文档等文本文件)">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
             </button>
             <button type="button" id="webSearchBtn" class="composer-btn" title="联网搜索">
@@ -2022,29 +2022,6 @@ fileInput.addEventListener('change', async () => {
   fileInput.value = '';
   for (const f of files) await uploadFile(f);
 });
-const DOC_EXTENSIONS = new Set(['.pdf','.docx','.csv','.tsv','.txt','.md','.json','.log','.xlsx','.xls']);
-const DOC_MIME_TYPES = new Set([
-  'application/pdf',
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  'application/vnd.ms-excel',
-  'text/csv',
-  'text/tab-separated-values',
-  'text/markdown',
-  'application/json',
-  'text/plain',
-]);
-
-function fileExtension(file) {
-  const name = file?.name || '';
-  const idx = name.lastIndexOf('.');
-  return idx >= 0 ? name.slice(idx).toLowerCase() : '';
-}
-
-function isDocFile(file) {
-  return DOC_EXTENSIONS.has(fileExtension(file)) || DOC_MIME_TYPES.has(file?.type || '');
-}
-
 function filesFromTransfer(dt) {
   const files = [];
   const seen = new Set();
@@ -2068,11 +2045,8 @@ async function handleInputFile(file) {
     await uploadFile(file);
     return true;
   }
-  if (isDocFile(file)) {
-    await uploadDocFile(file);
-    return true;
-  }
-  return false;
+  await uploadDocFile(file);
+  return true;
 }
 
 document.addEventListener('paste', async (e) => {
@@ -2947,7 +2921,7 @@ async function uploadDocFile(file) {
 docInput.addEventListener('change', async () => {
   const files = Array.from(docInput.files || []);
   docInput.value = '';
-  for (const f of files) await uploadDocFile(f);
+  for (const f of files) await handleInputFile(f);
   renderDocChips();
 });
 

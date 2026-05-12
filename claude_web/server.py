@@ -695,17 +695,25 @@ async def upload(file: UploadFile = File(...)):
     }
 
 
-DOC_EXTS = {".pdf", ".docx", ".csv", ".tsv", ".txt", ".md", ".json", ".log", ".xlsx", ".xls"}
 DOC_MIME_EXTS = {
     "application/pdf": ".pdf",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ".xlsx",
+    "application/vnd.ms-excel.sheet.macroenabled.12": ".xlsm",
     "application/vnd.ms-excel": ".xls",
+    "application/xhtml+xml": ".html",
+    "application/javascript": ".js",
+    "application/json": ".json",
+    "application/xml": ".xml",
+    "image/svg+xml": ".svg",
     "text/csv": ".csv",
+    "text/css": ".css",
+    "text/html": ".html",
+    "text/javascript": ".js",
     "text/tab-separated-values": ".tsv",
     "text/markdown": ".md",
-    "application/json": ".json",
     "text/plain": ".txt",
+    "text/xml": ".xml",
 }
 MAX_DOC_MB = 20
 MAX_DOC_CHARS = 50000
@@ -772,23 +780,54 @@ def _extract_xls_text(path: Path) -> str:
     return "\n".join(parts)
 
 
+def _looks_binary(data: bytes) -> bool:
+    sample = data[:8192]
+    if not sample:
+        return False
+    if b"\x00" in sample:
+        return True
+    allowed_controls = {9, 10, 12, 13}
+    control_count = sum(1 for b in sample if b < 32 and b not in allowed_controls)
+    return control_count / len(sample) > 0.30
+
+
+def _reject_mojibake(text: str) -> str:
+    if not text:
+        return text
+    replacement_count = text.count("\ufffd")
+    if replacement_count and replacement_count / len(text) > 0.01:
+        raise HTTPException(status_code=400, detail="unsupported binary file")
+    return text
+
+
+def _decode_text_upload(data: bytes) -> str:
+    if data.startswith((b"\xff\xfe", b"\xfe\xff")):
+        return _reject_mojibake(data.decode("utf-16", errors="replace"))
+    if data.startswith(b"\xef\xbb\xbf"):
+        return _reject_mojibake(data.decode("utf-8-sig", errors="replace"))
+    if _looks_binary(data):
+        raise HTTPException(status_code=400, detail="unsupported binary file")
+
+    for encoding in ("utf-8", "gb18030"):
+        try:
+            return data.decode(encoding)
+        except UnicodeDecodeError:
+            continue
+    return _reject_mojibake(data.decode("utf-8", errors="replace"))
+
+
 def _doc_ext_from_upload(file: UploadFile) -> tuple[str, str]:
     filename = file.filename or "clipboard-file"
     ext = Path(filename).suffix.lower()
     if not ext:
         content_type = (file.content_type or "").split(";", 1)[0].strip().lower()
         ext = DOC_MIME_EXTS.get(content_type, "")
-    if not ext:
-        raise HTTPException(status_code=400, detail="filename missing")
     return ext, filename
 
 
 @app.post("/api/upload-doc")
 async def upload_doc(file: UploadFile = File(...)):
     ext, filename = _doc_ext_from_upload(file)
-    if ext not in DOC_EXTS:
-        raise HTTPException(status_code=400, detail=f"unsupported type {ext}")
-
     data = await file.read()
     if len(data) > MAX_DOC_MB * 1024 * 1024:
         raise HTTPException(status_code=413, detail=f"file exceeds {MAX_DOC_MB} MB")
@@ -802,13 +841,17 @@ async def upload_doc(file: UploadFile = File(...)):
             text = _extract_pdf_text(path)
         elif ext == ".docx":
             text = _extract_docx_text(path)
-        elif ext == ".xlsx":
+        elif ext in (".xlsx", ".xlsm"):
             text = _extract_xlsx_text(path)
         elif ext == ".xls":
             text = _extract_xls_text(path)
         else:
-            text = data.decode("utf-8", errors="replace")
+            text = _decode_text_upload(data)
+    except HTTPException:
+        path.unlink(missing_ok=True)
+        raise
     except Exception as e:
+        path.unlink(missing_ok=True)
         raise HTTPException(status_code=500, detail=f"extract failed: {e}")
 
     text = text.strip()
