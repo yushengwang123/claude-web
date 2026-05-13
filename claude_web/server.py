@@ -1962,6 +1962,20 @@ async def fetch_url(req: FetchUrlRequest):
     }
 
 
+@app.get("/api/version")
+async def get_version():
+    from claude_web import __version__
+    return {"version": __version__}
+
+
+@app.get("/changelog.json")
+async def get_changelog():
+    path = STATIC_DIR / "changelog.json"
+    if not path.exists():
+        return {"releases": []}
+    return FileResponse(path, media_type="application/json")
+
+
 @app.get("/")
 async def index():
     return FileResponse(STATIC_DIR / "index.html")

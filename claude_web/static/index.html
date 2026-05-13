@@ -280,6 +280,88 @@
   @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
   @keyframes slideUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
 
+  /* ===== Onboarding tour ===== */
+  .tour-overlay {
+    position: fixed; inset: 0; z-index: 60;
+    pointer-events: auto;
+    background: transparent;
+    animation: fadeIn .2s ease-out;
+  }
+  .tour-spotlight {
+    position: fixed; z-index: 61; pointer-events: none;
+    border-radius: 12px;
+    box-shadow: 0 0 0 9999px rgba(0,0,0,0.55), 0 0 0 4px var(--accent), 0 0 24px var(--accent);
+    transition: top .25s ease, left .25s ease, width .25s ease, height .25s ease;
+    animation: tourPulse 2s ease-in-out infinite;
+  }
+  @keyframes tourPulse {
+    0%, 100% { box-shadow: 0 0 0 9999px rgba(0,0,0,0.55), 0 0 0 4px var(--accent), 0 0 24px var(--accent); }
+    50% { box-shadow: 0 0 0 9999px rgba(0,0,0,0.55), 0 0 0 6px var(--accent), 0 0 36px var(--accent); }
+  }
+  .tour-tooltip {
+    position: fixed; z-index: 62;
+    background: var(--surface); color: var(--text);
+    border-radius: 12px; padding: 16px 18px;
+    max-width: 340px; width: 90vw;
+    box-shadow: var(--shadow-lg);
+    border: 1px solid var(--border);
+    animation: slideUp .2s ease-out;
+  }
+  .tour-tooltip-title { font-size: 14px; font-weight: 600; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
+  .tour-tooltip-body { font-size: 13px; color: var(--text-muted); line-height: 1.6; margin-bottom: 12px; }
+  .tour-tooltip-actions { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .tour-step-dots { display: flex; gap: 6px; }
+  .tour-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--border); }
+  .tour-dot.active { background: var(--accent); width: 18px; border-radius: 3px; }
+  .tour-btn {
+    padding: 6px 14px; font-size: 13px; border-radius: 8px;
+    border: 1px solid var(--border); background: transparent; color: var(--text-muted);
+    cursor: pointer; transition: all .15s;
+  }
+  .tour-btn:hover { background: var(--surface-2); color: var(--text); }
+  .tour-btn.primary { background: var(--accent); color: white; border-color: var(--accent); }
+  .tour-btn.primary:hover { background: var(--accent-hover); }
+
+  /* ===== What's New toast (bottom-right) ===== */
+  .whatsnew-toast {
+    position: fixed; bottom: 24px; right: 24px; z-index: 55;
+    background: var(--surface); color: var(--text);
+    border-radius: 12px; padding: 14px 16px;
+    width: 340px; max-width: calc(100vw - 48px);
+    box-shadow: var(--shadow-lg);
+    border: 1px solid var(--border);
+    animation: slideUp .25s ease-out;
+  }
+  .whatsnew-toast.hidden { display: none; }
+  .whatsnew-title { font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
+  .whatsnew-version { font-size: 11px; padding: 1px 6px; border-radius: 4px; background: var(--accent-soft); color: var(--accent); }
+  .whatsnew-list { font-size: 12.5px; color: var(--text-muted); line-height: 1.6; margin-bottom: 10px; max-height: 140px; overflow-y: auto; }
+  .whatsnew-list li { list-style: none; padding-left: 14px; position: relative; }
+  .whatsnew-list li::before { content: "•"; position: absolute; left: 2px; color: var(--accent); }
+  .whatsnew-actions { display: flex; justify-content: flex-end; gap: 8px; }
+
+  /* ===== Help panel ===== */
+  .help-section { margin-bottom: 18px; }
+  .help-section-title { font-size: 12px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 8px; }
+  .kbd-list { display: grid; grid-template-columns: 1fr auto; gap: 6px 12px; font-size: 13px; }
+  .kbd-list .desc { color: var(--text); }
+  kbd {
+    display: inline-block; padding: 2px 6px; font-size: 11px;
+    font-family: ui-monospace, SFMono-Regular, monospace;
+    background: var(--surface-2); border: 1px solid var(--border);
+    border-radius: 4px; color: var(--text);
+  }
+  .changelog-entry { padding: 12px 0; border-bottom: 1px solid var(--border); }
+  .changelog-entry:last-child { border-bottom: none; }
+  .changelog-version { font-weight: 600; font-size: 14px; display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+  .changelog-date { font-size: 11px; color: var(--text-subtle); font-weight: 400; }
+  .changelog-item { font-size: 12.5px; color: var(--text-muted); padding-left: 12px; position: relative; line-height: 1.6; }
+  .changelog-item::before { content: ""; position: absolute; left: 0; top: 9px; width: 4px; height: 4px; border-radius: 50%; background: var(--text-subtle); }
+  .changelog-tag { display: inline-block; font-size: 10px; padding: 1px 5px; border-radius: 3px; margin-right: 4px; font-weight: 500; }
+  .changelog-tag.feature { background: rgba(16, 185, 129, 0.12); color: #10b981; }
+  .changelog-tag.fix { background: rgba(59, 130, 246, 0.12); color: #3b82f6; }
+  .changelog-tag.breaking { background: rgba(239, 68, 68, 0.15); color: #ef4444; }
+
   /* ===== Mermaid ===== */
   .mermaid {
     background: var(--surface-2); border: 1px solid var(--border);
@@ -598,6 +680,7 @@
         <option value="haiku">Haiku</option>
       </select>
       <button id="headerMoreBtn" class="sb-icon-btn" title="工作目录 / 权限策略">⋯</button>
+      <button id="helpBtn" class="sb-icon-btn relative" title="帮助 / 快捷键 / 更新日志">?<span id="helpBadge" class="hidden absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full" style="background:#ef4444;"></span></button>
       <button id="exportBtn" class="sb-icon-btn" title="导出 Markdown">📥</button>
     </div>
   </header>
@@ -856,6 +939,84 @@
 
 <!-- Lightbox -->
 <div id="lightbox" class="lightbox hidden"><img /></div>
+
+<!-- Onboarding tour overlay -->
+<div id="tourOverlay" class="tour-overlay hidden">
+  <div id="tourSpotlight" class="tour-spotlight" style="display:none;"></div>
+  <div id="tourTooltip" class="tour-tooltip" style="display:none;">
+    <div id="tourTitle" class="tour-tooltip-title"></div>
+    <div id="tourBody" class="tour-tooltip-body"></div>
+    <div class="tour-tooltip-actions">
+      <div id="tourDots" class="tour-step-dots"></div>
+      <div class="flex items-center gap-2">
+        <button id="tourSkip" class="tour-btn">跳过</button>
+        <button id="tourNext" class="tour-btn primary">下一步 →</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- What's New toast -->
+<div id="whatsnewToast" class="whatsnew-toast hidden">
+  <div class="whatsnew-title">
+    <span>✨ 已更新</span>
+    <span id="whatsnewVersion" class="whatsnew-version">v0.0.0</span>
+    <button id="whatsnewClose" class="ml-auto text-base leading-none opacity-50 hover:opacity-100" style="background:none;border:none;cursor:pointer;color:var(--text-muted);">×</button>
+  </div>
+  <ul id="whatsnewList" class="whatsnew-list"></ul>
+  <div class="whatsnew-actions">
+    <button id="whatsnewViewAll" class="tour-btn">查看全部</button>
+    <button id="whatsnewOk" class="tour-btn primary">知道了</button>
+  </div>
+</div>
+
+<!-- Help modal -->
+<div id="helpModal" class="modal-backdrop hidden">
+  <div class="modal-box lg p-5">
+    <div class="flex items-center justify-between mb-4">
+      <h3 class="text-base font-semibold">帮助 & 更新日志</h3>
+      <button data-close class="text-xl leading-none opacity-60 hover:opacity-100" style="background:none;border:none;cursor:pointer;color:var(--text);">×</button>
+    </div>
+
+    <div class="help-section">
+      <div class="help-section-title">快捷键</div>
+      <div class="kbd-list">
+        <div class="desc">搜索会话</div><div><kbd>⌘</kbd> <kbd>K</kbd></div>
+        <div class="desc">新会话</div><div><kbd>⌘</kbd> <kbd>N</kbd></div>
+        <div class="desc">发送消息</div><div><kbd>Enter</kbd></div>
+        <div class="desc">换行</div><div><kbd>Shift</kbd> <kbd>Enter</kbd></div>
+        <div class="desc">关闭弹窗</div><div><kbd>Esc</kbd></div>
+        <div class="desc">引用文件</div><div>输入 <kbd>@</kbd></div>
+      </div>
+    </div>
+
+    <div class="help-section">
+      <div class="help-section-title">使用技巧</div>
+      <div class="text-[13px]" style="color:var(--text-muted); line-height:1.7;">
+        <div>• 粘贴图片直接发送（支持截图）</div>
+        <div>• 粘贴 URL 自动抓取网页正文作为上下文</div>
+        <div>• 拖拽文档（PDF / DOCX / XLSX 等）上传并提取文本</div>
+        <div>• 工具调用失败时可一键放行权限重试</div>
+        <div>• Git 仓库自动 checkpoint，可一键回滚到对话前</div>
+        <div>• 双击会话标题重命名，或点 🪄 让 AI 命名</div>
+      </div>
+    </div>
+
+    <div class="help-section">
+      <div class="help-section-title">更多</div>
+      <div class="flex items-center gap-2 flex-wrap">
+        <button id="helpReplayTour" class="tour-btn">🎯 重看新手引导</button>
+        <a href="https://github.com/heng1234/claude-web" target="_blank" rel="noopener" class="tour-btn" style="text-decoration:none;display:inline-block;">📦 GitHub 仓库</a>
+        <a href="https://docs.claude.com/claude-code" target="_blank" rel="noopener" class="tour-btn" style="text-decoration:none;display:inline-block;">📖 Claude Code 文档</a>
+      </div>
+    </div>
+
+    <div class="help-section">
+      <div class="help-section-title">更新日志</div>
+      <div id="helpChangelog" class="text-[13px]" style="max-height:340px; overflow-y:auto;"></div>
+    </div>
+  </div>
+</div>
 
 <script>
 // ===== libs =====
@@ -2111,13 +2272,18 @@ function renderAttachments() {
   attachmentsEl.classList.remove('hidden');
   attachmentsEl.innerHTML = pendingImages.map((img, i) => `
     <div class="relative group">
-      <img src="${img.url}" class="w-20 h-20 object-cover rounded-lg border dark:border-slate-600" />
-      <button type="button" data-idx="${i}"
+      <img src="${img.url}" data-preview-idx="${i}" title="点击放大预览"
+        class="w-20 h-20 object-cover rounded-lg border dark:border-slate-600 cursor-zoom-in transition-transform hover:scale-105" />
+      <button type="button" data-idx="${i}" title="移除"
         class="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs opacity-0 group-hover:opacity-100">×</button>
     </div>
   `).join('');
+  attachmentsEl.querySelectorAll('img[data-preview-idx]').forEach(im => {
+    im.addEventListener('click', () => openLightbox(im.src));
+  });
   attachmentsEl.querySelectorAll('button[data-idx]').forEach(b => {
-    b.addEventListener('click', () => {
+    b.addEventListener('click', (e) => {
+      e.stopPropagation();
       const removed = pendingImages.splice(Number(b.dataset.idx), 1)[0];
       if (removed?._imageKey) pendingImageKeys.delete(removed._imageKey);
       renderAttachments();
@@ -2796,6 +2962,8 @@ document.addEventListener('keydown', (e) => {
   if (mod && e.key.toLowerCase() === 'k') { e.preventDefault(); searchInput.focus(); searchInput.select(); return; }
   if (mod && e.key.toLowerCase() === 'n') { e.preventDefault(); startNewSession(); return; }
   if (e.key === 'Escape') {
+    if (!$('tourOverlay').classList.contains('hidden')) { hideTour(); return; }
+    if (!$('whatsnewToast').classList.contains('hidden')) { dismissWhatsNew(); return; }
     document.querySelectorAll('.modal-backdrop:not(.hidden)').forEach(m => m.classList.add('hidden'));
     if (!lightbox.classList.contains('hidden')) lightbox.classList.add('hidden');
   }
@@ -3262,6 +3430,248 @@ refreshTags();
 refreshGitStatus();
 setInterval(refreshSessions, 30000);
 setInterval(refreshStats, 60000);
+
+// ===== Onboarding + What's New + Help =====
+const ONBOARD_KEY = 'cw_onboarded_v1';
+const SEEN_VERSION_KEY = 'cw_seen_version';
+let appVersion = '0.0.0';
+let changelogData = null;
+
+async function loadVersionAndChangelog() {
+  try {
+    const v = await fetch('/api/version').then(r => r.json());
+    appVersion = v.version || '0.0.0';
+  } catch {}
+  try {
+    changelogData = await fetch('/changelog.json').then(r => r.json());
+  } catch { changelogData = { releases: [] }; }
+}
+
+function compareVersion(a, b) {
+  const pa = String(a || '0.0.0').split('.').map(n => parseInt(n) || 0);
+  const pb = String(b || '0.0.0').split('.').map(n => parseInt(n) || 0);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const da = pa[i] || 0, db = pb[i] || 0;
+    if (da !== db) return da - db;
+  }
+  return 0;
+}
+
+function changelogSince(seenVersion) {
+  if (!changelogData?.releases) return [];
+  return changelogData.releases.filter(r => compareVersion(r.version, seenVersion) > 0);
+}
+
+// ----- Onboarding tour -----
+const TOUR_STEPS = [
+  {
+    targetId: null,
+    title: '👋 欢迎使用 Claude Code Web',
+    body: '这是 Claude Code CLI 的本地可视化界面。所有对话都在你的电脑上跑，不上传任何数据。<br><br>下面几秒带你认识一下主要功能。',
+  },
+  {
+    targetId: 'input',
+    title: '💬 输入消息',
+    body: '在这里输入问题，<kbd>Enter</kbd> 发送。<br>• 粘贴图片 / 截图直接发<br>• 输入 <kbd>@</kbd> 引用项目里的文件<br>• 粘贴 URL 自动抓取网页正文',
+  },
+  {
+    targetId: 'attachBtn',
+    title: '📎 上传图片 / 文档',
+    body: '附件按钮支持图片（截图、粘贴板、拖拽）；文档按钮支持 PDF / DOCX / XLSX 等，自动提取文本作为上下文。',
+  },
+  {
+    targetId: 'sidebar',
+    title: '🗂 会话管理',
+    body: '左侧自动保存所有会话。右键置顶 / 归档 / 加标签，双击标题重命名，或点 🪄 让 AI 自动命名。',
+  },
+  {
+    targetId: 'helpBtn',
+    title: '❓ 随时回看',
+    body: '点这个按钮可以查看快捷键、使用技巧和更新日志，也可以重看本引导。<br><br>开始使用吧！',
+  },
+];
+let tourIdx = 0;
+
+function showTour(startFrom = 0) {
+  tourIdx = startFrom;
+  renderTourStep();
+  $('tourOverlay').classList.remove('hidden');
+}
+
+function hideTour() {
+  $('tourOverlay').classList.add('hidden');
+  // On mobile, if we auto-opened the sidebar during the tour, close it now so it doesn't block the chat.
+  const sb = document.getElementById('sidebar');
+  if (sb && window.innerWidth <= 768) sb.classList.remove('open');
+  localStorage.setItem(ONBOARD_KEY, '1');
+}
+
+function renderTourStep() {
+  const step = TOUR_STEPS[tourIdx];
+  if (!step) { hideTour(); return; }
+
+  $('tourTitle').innerHTML = step.title;
+  $('tourBody').innerHTML = step.body;
+  $('tourDots').innerHTML = TOUR_STEPS.map((_, i) => `<div class="tour-dot ${i === tourIdx ? 'active' : ''}"></div>`).join('');
+  $('tourNext').textContent = (tourIdx === TOUR_STEPS.length - 1) ? '完成 ✓' : '下一步 →';
+
+  const spot = $('tourSpotlight');
+  const tip = $('tourTooltip');
+
+  const centerTooltip = () => {
+    spot.style.display = 'none';
+    tip.style.display = 'block';
+    tip.style.left = '50%';
+    tip.style.top = '50%';
+    tip.style.transform = 'translate(-50%, -50%)';
+  };
+
+  if (!step.targetId) { centerTooltip(); return; }
+
+  const target = document.getElementById(step.targetId);
+  if (!target) { centerTooltip(); return; }
+
+  // On mobile, sidebar is off-canvas (left:-288). Auto-open before highlighting it.
+  if (step.targetId === 'sidebar' && window.innerWidth <= 768 && !target.classList.contains('open')) {
+    target.classList.add('open');
+    // wait for the 200ms slide-in transition to finish before measuring
+    setTimeout(() => renderTourStep(), 220);
+    return;
+  }
+
+  const rect = target.getBoundingClientRect();
+  const inViewport = rect.width > 0 && rect.height > 0 &&
+    rect.right > 0 && rect.bottom > 0 &&
+    rect.left < window.innerWidth && rect.top < window.innerHeight;
+  if (!inViewport) { centerTooltip(); return; }
+
+  const padding = 6;
+  spot.style.display = 'block';
+  spot.style.top = (rect.top - padding) + 'px';
+  spot.style.left = (rect.left - padding) + 'px';
+  spot.style.width = (rect.width + padding * 2) + 'px';
+  spot.style.height = (rect.height + padding * 2) + 'px';
+
+  // Position tooltip near target (prefer below, fallback above, then center)
+  tip.style.display = 'block';
+  tip.style.transform = 'none';
+  const tipWidth = Math.min(340, window.innerWidth - 32);
+  const tipHeight = tip.offsetHeight || 160;
+  let tipTop = rect.bottom + 16;
+  let tipLeft = Math.max(16, Math.min(window.innerWidth - tipWidth - 16, rect.left + rect.width / 2 - tipWidth / 2));
+  if (tipTop + tipHeight > window.innerHeight - 16) {
+    tipTop = Math.max(16, rect.top - tipHeight - 16);
+  }
+  // If still doesn't fit vertically, fall back to centered tooltip (spotlight stays)
+  if (tipTop < 16 || tipTop + tipHeight > window.innerHeight - 16) {
+    tip.style.left = '50%';
+    tip.style.top = '50%';
+    tip.style.transform = 'translate(-50%, -50%)';
+    return;
+  }
+  tip.style.top = tipTop + 'px';
+  tip.style.left = tipLeft + 'px';
+}
+
+$('tourNext').addEventListener('click', () => {
+  tourIdx++;
+  if (tourIdx >= TOUR_STEPS.length) hideTour();
+  else renderTourStep();
+});
+$('tourSkip').addEventListener('click', () => hideTour());
+$('tourOverlay').addEventListener('click', (e) => { if (e.target.id === 'tourOverlay') hideTour(); });
+window.addEventListener('resize', () => { if (!$('tourOverlay').classList.contains('hidden')) renderTourStep(); });
+
+// ----- What's New toast -----
+function showWhatsNew(releases) {
+  if (!releases?.length) return;
+  const latest = releases[0];
+  $('whatsnewVersion').textContent = 'v' + latest.version;
+  const items = releases.slice(0, 2).flatMap(r =>
+    r.highlights.filter(h => h.type === 'new' || h.type === 'breaking').slice(0, 4).map(h => h.text)
+  );
+  const fixCount = releases.flatMap(r => r.highlights.filter(h => h.type === 'fix')).length;
+  let html = items.map(t => `<li>${escapeHtml(t)}</li>`).join('');
+  if (fixCount > 0 && items.length < 4) {
+    html += `<li style="color:var(--text-subtle);">+ ${fixCount} 项稳定性 / bug 修复</li>`;
+  }
+  $('whatsnewList').innerHTML = html;
+  $('whatsnewToast').classList.remove('hidden');
+}
+
+function dismissWhatsNew() {
+  $('whatsnewToast').classList.add('hidden');
+  localStorage.setItem(SEEN_VERSION_KEY, appVersion);
+  const badge = $('helpBadge');
+  if (badge) badge.classList.add('hidden');
+}
+
+$('whatsnewClose').addEventListener('click', dismissWhatsNew);
+$('whatsnewOk').addEventListener('click', dismissWhatsNew);
+$('whatsnewViewAll').addEventListener('click', () => {
+  dismissWhatsNew();
+  openHelp();
+});
+
+// ----- Help panel -----
+function renderChangelog() {
+  if (!changelogData?.releases) { $('helpChangelog').innerHTML = '<div style="color:var(--text-subtle);font-size:12px;">无更新日志</div>'; return; }
+  $('helpChangelog').innerHTML = changelogData.releases.map(r => `
+    <div class="changelog-entry">
+      <div class="changelog-version">v${escapeHtml(r.version)} <span class="changelog-date">${escapeHtml(r.date || '')}</span></div>
+      ${r.highlights.map(h => `
+        <div class="changelog-item">
+          <span class="changelog-tag ${h.type}">${h.type === 'new' ? 'NEW' : h.type === 'fix' ? 'FIX' : 'BREAKING'}</span>
+          ${escapeHtml(h.text)}
+        </div>
+      `).join('')}
+    </div>
+  `).join('');
+}
+
+function openHelp() {
+  renderChangelog();
+  $('helpModal').classList.remove('hidden');
+}
+
+$('helpBtn').addEventListener('click', openHelp);
+$('helpReplayTour').addEventListener('click', () => {
+  $('helpModal').classList.add('hidden');
+  showTour(0);
+});
+
+// ----- Bootstrap: decide what to show -----
+(async function bootstrapOnboarding() {
+  await loadVersionAndChangelog();
+
+  const onboarded = localStorage.getItem(ONBOARD_KEY);
+  const seenVersion = localStorage.getItem(SEEN_VERSION_KEY);
+
+  if (!onboarded) {
+    // First-time visitor: show tour. Mark as "seen current version" so we don't double-prompt.
+    localStorage.setItem(SEEN_VERSION_KEY, appVersion);
+    setTimeout(() => showTour(0), 400);
+    return;
+  }
+
+  if (!seenVersion) {
+    // Returning user but no recorded version (older install): silently catch up.
+    localStorage.setItem(SEEN_VERSION_KEY, appVersion);
+    return;
+  }
+
+  if (compareVersion(appVersion, seenVersion) > 0) {
+    const newReleases = changelogSince(seenVersion);
+    const hasFeature = newReleases.some(r => r.highlights.some(h => h.type === 'new' || h.type === 'breaking'));
+    if (hasFeature) {
+      // Active toast for feature releases
+      setTimeout(() => showWhatsNew(newReleases), 800);
+    } else {
+      // Quiet red dot for fix-only releases
+      $('helpBadge').classList.remove('hidden');
+    }
+  }
+})();
 </script>
 </body>
 </html>
