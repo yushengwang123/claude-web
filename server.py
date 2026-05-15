@@ -280,6 +280,10 @@ class ChatRequest(BaseModel):
     allowed_tools: Optional[List[str]] = None
     disallowed_tools: Optional[List[str]] = None
     force_new: Optional[bool] = None
+    # UI-only metadata for attached docs (name/size/length/path); rendered as
+    # badges on the user message. Not used to build the prompt — the doc text
+    # is already embedded in `message` by the client.
+    docs: Optional[List[dict]] = None
 
 
 class PromptRequest(BaseModel):
@@ -389,6 +393,7 @@ def classify_claude_error(message: str) -> dict:
 
 
 def build_image_input_message(message: str, images: List[str]) -> bytes:
+    """Build a stream-json user message. Works with or without images."""
     import base64 as b64mod
     content: List[dict] = []
     for img_path in images:
@@ -577,9 +582,15 @@ async def chat(req: ChatRequest):
         "type": "user_input",
         "text": display_text,
         "images": req.images or [],
+        "docs": req.docs or [],
         "ts": time.time(),
         "checkpoint": checkpoint,
     }
+    # When the prompt was rewritten on the client (doc content / URL fetch / web-search prefix
+    # injected), keep the full sent text so badge previews can recover doc bodies even
+    # after the upload file is pruned. Only stored when it actually differs.
+    if req.message != display_text:
+        user_event["full_text"] = req.message
     append_event(session_id, user_event)
     upsert_session(session_id, derive_title(display_text), work_dir)
     set_session_remote_state(session_id, remote_session_id, remote_ready and not is_new)
@@ -603,6 +614,10 @@ async def chat(req: ChatRequest):
             await _terminate_process(existing)
 
         has_images = bool(req.images)
+        # Route through stdin when the prompt would blow past argv limits
+        # (macOS ~256KB, Linux ~128KB total argv). Images already force stdin.
+        message_too_large = len(full_message.encode("utf-8")) > ARGV_STDIN_THRESHOLD
+        use_stdin = has_images or message_too_large
         args = build_args(
             full_message, remote_session_id,
             resume=not is_new,
@@ -611,23 +626,30 @@ async def chat(req: ChatRequest):
             permission_mode=req.permission_mode,
             allowed_tools=req.allowed_tools,
             disallowed_tools=req.disallowed_tools,
-            use_stdin=has_images,
+            use_stdin=use_stdin,
         )
         stdin_data: Optional[bytes] = None
-        if has_images:
+        if use_stdin:
             stdin_data = build_image_input_message(full_message, req.images or [])
         try:
             process = await asyncio.create_subprocess_exec(
                 *args,
-                stdin=asyncio.subprocess.PIPE if has_images else None,
+                stdin=asyncio.subprocess.PIPE if use_stdin else None,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 cwd=work_dir,
                 limit=16 * 1024 * 1024,
             )
-            if has_images and stdin_data and process.stdin:
-                process.stdin.write(stdin_data)
-                process.stdin.close()
+            if use_stdin and stdin_data and process.stdin:
+                try:
+                    process.stdin.write(stdin_data)
+                    await process.stdin.drain()
+                    process.stdin.close()
+                    await process.stdin.wait_closed()
+                except (BrokenPipeError, ConnectionResetError):
+                    # CLI exited early (auth failure, bad args, etc). The stderr
+                    # path will surface the real reason; don't tear down SSE here.
+                    pass
         except FileNotFoundError:
             err_event = {"type": "error", "message": "claude CLI not found in PATH"}
             append_event(session_id, err_event)
@@ -856,6 +878,7 @@ DOC_MIME_EXTS = {
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ".xlsx",
     "application/vnd.ms-excel.sheet.macroenabled.12": ".xlsm",
     "application/vnd.ms-excel": ".xls",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation": ".pptx",
     "application/xhtml+xml": ".html",
     "application/javascript": ".js",
     "application/json": ".json",
@@ -870,30 +893,119 @@ DOC_MIME_EXTS = {
     "text/plain": ".txt",
     "text/xml": ".xml",
 }
-MAX_DOC_MB = 20
-MAX_DOC_CHARS = 50000
+MAX_DOC_MB = 30
+# Soft cap kept for UI display; we no longer hard-truncate the document text on
+# upload. Anything beyond this just gets a "large document" hint in the response.
+LARGE_DOC_CHARS_HINT = 200_000
+# Argv length safety margin. macOS allows ~256KB total argv; once the prompt
+# (UTF-8 bytes) crosses this we route through stdin to avoid E2BIG.
+ARGV_STDIN_THRESHOLD = 60_000
 
 
 def _extract_pdf_text(path: Path) -> str:
+    """Extract PDF text. Prefers pdfplumber (better tables/layout) when available,
+    falls back to pypdf on any failure (import miss, malformed PDF, table extraction error).
+    Each page is prefixed with [Page N] so the model can cite."""
+    try:
+        import pdfplumber  # type: ignore
+    except ImportError:
+        pdfplumber = None  # type: ignore
+    if pdfplumber is not None:
+        try:
+            parts: List[str] = []
+            with pdfplumber.open(str(path)) as pdf:
+                for i, page in enumerate(pdf.pages, 1):
+                    page_text = page.extract_text() or ""
+                    tables = []
+                    try:
+                        for table in page.extract_tables() or []:
+                            if not table:
+                                continue
+                            rows = [" | ".join((cell or "").strip() for cell in row) for row in table]
+                            tables.append("\n".join(rows))
+                    except Exception:
+                        pass
+                    section = f"[Page {i}]\n{page_text}"
+                    if tables:
+                        section += "\n\n" + "\n\n".join(tables)
+                    parts.append(section)
+            return "\n\n".join(parts)
+        except Exception:
+            # Any pdfplumber failure (malformed PDF, missing deps, parse error) → fall through to pypdf.
+            pass
     import pypdf
     reader = pypdf.PdfReader(str(path))
-    parts: List[str] = []
-    for page in reader.pages:
+    parts = []
+    for i, page in enumerate(reader.pages, 1):
         try:
-            parts.append(page.extract_text() or "")
+            text = page.extract_text() or ""
         except Exception:
-            continue
+            text = ""
+        parts.append(f"[Page {i}]\n{text}")
     return "\n\n".join(parts)
 
 
+def _docx_table_to_markdown(table) -> str:
+    rows = []
+    for row in table.rows:
+        cells = [(cell.text or "").strip().replace("\n", " ") for cell in row.cells]
+        rows.append("| " + " | ".join(cells) + " |")
+    if not rows:
+        return ""
+    if len(rows) == 1:
+        return rows[0]
+    header_sep = "| " + " | ".join("---" for _ in table.rows[0].cells) + " |"
+    return rows[0] + "\n" + header_sep + "\n" + "\n".join(rows[1:])
+
+
+def _docx_hf_lines(hdr_or_ftr, label: str) -> List[str]:
+    """Collect paragraphs and tables from a header/footer container as labeled lines."""
+    if hdr_or_ftr is None:
+        return []
+    out: List[str] = []
+    for p in hdr_or_ftr.paragraphs:
+        if p.text and p.text.strip():
+            out.append(f"[{label}] {p.text}")
+    for t in getattr(hdr_or_ftr, "tables", []) or []:
+        md = _docx_table_to_markdown(t)
+        if md:
+            out.append(f"[{label} table]\n{md}")
+    return out
+
+
 def _extract_docx_text(path: Path) -> str:
+    """Extract DOCX content preserving the original paragraph/table order.
+    Walks the body XML in document order so a 'paragraph → table → paragraph' layout
+    survives instead of becoming 'all paragraphs then all tables'.
+    Includes default / first-page / even-page headers and footers, plus any
+    tables embedded inside them."""
     import docx
+    from docx.oxml.ns import qn
+    from docx.text.paragraph import Paragraph
+    from docx.table import Table
     doc = docx.Document(str(path))
-    parts = [p.text for p in doc.paragraphs if p.text]
-    for table in doc.tables:
-        for row in table.rows:
-            cells = [cell.text.strip() for cell in row.cells]
-            parts.append(" | ".join(cells))
+    parts: List[str] = []
+    for section in doc.sections:
+        parts += _docx_hf_lines(section.header, "Header")
+        parts += _docx_hf_lines(section.first_page_header, "Header (first page)")
+        parts += _docx_hf_lines(getattr(section, "even_page_header", None), "Header (even page)")
+    body = doc.element.body
+    para_tag = qn("w:p")
+    table_tag = qn("w:tbl")
+    for child in body.iterchildren():
+        if child.tag == para_tag:
+            p = Paragraph(child, doc)
+            if p.text:
+                parts.append(p.text)
+        elif child.tag == table_tag:
+            t = Table(child, doc)
+            md = _docx_table_to_markdown(t)
+            if md:
+                parts.append(md)
+    for section in doc.sections:
+        parts += _docx_hf_lines(section.footer, "Footer")
+        parts += _docx_hf_lines(section.first_page_footer, "Footer (first page)")
+        parts += _docx_hf_lines(getattr(section, "even_page_footer", None), "Footer (even page)")
     return "\n".join(parts)
 
 
@@ -933,6 +1045,70 @@ def _extract_xls_text(path: Path) -> str:
     finally:
         wb.release_resources()
     return "\n".join(parts)
+
+
+def _extract_pptx_text(path: Path) -> str:
+    """Extract PowerPoint slides as plain text. Each slide gets a [Slide N] header
+    so the model can cite. Pulls title, body text from every shape (recursing into
+    grouped shapes), embedded tables (markdown-ified), and the speaker notes pane."""
+    from pptx import Presentation  # type: ignore
+    from pptx.enum.shapes import MSO_SHAPE_TYPE  # type: ignore
+
+    def walk(shape, title_shape, body_lines: List[str]) -> None:
+        # Recurse into groups so text/tables nested inside a group aren't lost.
+        if shape.shape_type == MSO_SHAPE_TYPE.GROUP:
+            for child in shape.shapes:
+                walk(child, title_shape, body_lines)
+            return
+        if title_shape is not None and shape == title_shape:
+            return
+        if shape.has_text_frame:
+            text = (shape.text_frame.text or "").strip()
+            if text:
+                body_lines.append(text)
+        elif shape.has_table:
+            rows = []
+            for row in shape.table.rows:
+                cells = [(c.text or "").strip().replace("\n", " ") for c in row.cells]
+                rows.append("| " + " | ".join(cells) + " |")
+            if rows:
+                if len(rows) > 1:
+                    sep = "| " + " | ".join("---" for _ in shape.table.rows[0].cells) + " |"
+                    body_lines.append(rows[0] + "\n" + sep + "\n" + "\n".join(rows[1:]))
+                else:
+                    body_lines.append(rows[0])
+
+    prs = Presentation(str(path))
+    parts: List[str] = []
+    for i, slide in enumerate(prs.slides, 1):
+        title_shape = None
+        title = ""
+        try:
+            title_shape = slide.shapes.title
+            if title_shape is not None and title_shape.has_text_frame:
+                title = (title_shape.text_frame.text or "").strip()
+        except Exception:
+            title_shape = None
+        header = f"[Slide {i}]" + (f" {title}" if title else "")
+        body_lines: List[str] = []
+        for shape in slide.shapes:
+            try:
+                walk(shape, title_shape, body_lines)
+            except Exception:
+                continue  # don't let one bad shape kill the whole slide
+        notes_text = ""
+        try:
+            if slide.has_notes_slide:
+                notes_text = (slide.notes_slide.notes_text_frame.text or "").strip()
+        except Exception:
+            pass
+        section = header
+        if body_lines:
+            section += "\n" + "\n".join(body_lines)
+        if notes_text:
+            section += f"\n[Notes] {notes_text}"
+        parts.append(section)
+    return "\n\n".join(parts)
 
 
 def _looks_binary(data: bytes) -> bool:
@@ -996,6 +1172,8 @@ async def upload_doc(file: UploadFile = File(...)):
             text = _extract_pdf_text(path)
         elif ext == ".docx":
             text = _extract_docx_text(path)
+        elif ext == ".pptx":
+            text = _extract_pptx_text(path)
         elif ext in (".xlsx", ".xlsm"):
             text = _extract_xlsx_text(path)
         elif ext == ".xls":
@@ -1012,9 +1190,7 @@ async def upload_doc(file: UploadFile = File(...)):
         raise HTTPException(status_code=500, detail=f"extract failed: {e}")
 
     text = text.strip()
-    truncated = len(text) > MAX_DOC_CHARS
-    if truncated:
-        text = text[:MAX_DOC_CHARS]
+    is_large = len(text) > LARGE_DOC_CHARS_HINT
 
     return {
         "path": str(path.absolute()),
@@ -1023,8 +1199,48 @@ async def upload_doc(file: UploadFile = File(...)):
         "ext": ext,
         "content": text,
         "length": len(text),
-        "truncated": truncated,
+        "truncated": False,
+        "large": is_large,
     }
+
+
+@app.get("/api/doc-content")
+async def doc_content(path: str = Query(...)):
+    """Read back the extracted text for a doc badge preview.
+    Locked to files inside UPLOADS_DIR to prevent path traversal."""
+    try:
+        target = Path(path).resolve()
+    except (OSError, ValueError):
+        raise HTTPException(status_code=400, detail="invalid path")
+    uploads_root = UPLOADS_DIR.resolve()
+    try:
+        target.relative_to(uploads_root)
+    except ValueError:
+        raise HTTPException(status_code=403, detail="path outside uploads directory")
+    if not target.is_file():
+        raise HTTPException(status_code=404, detail="file not found")
+
+    ext = target.suffix.lower()
+    try:
+        if ext == ".pdf":
+            text = _extract_pdf_text(target)
+        elif ext == ".docx":
+            text = _extract_docx_text(target)
+        elif ext == ".pptx":
+            text = _extract_pptx_text(target)
+        elif ext in (".xlsx", ".xlsm"):
+            text = _extract_xlsx_text(target)
+        elif ext == ".xls":
+            text = _extract_xls_text(target)
+        elif ext in (".html", ".htm", ".xhtml"):
+            text = _extract_html_text(_decode_text_upload(target.read_bytes()))
+        else:
+            text = _decode_text_upload(target.read_bytes())
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"read failed: {e}")
+    return {"content": text.strip(), "length": len(text)}
 
 
 class ExecCodeRequest(BaseModel):

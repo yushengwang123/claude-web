@@ -121,6 +121,21 @@
     font-size: 15px;
     max-width: 100%;
   }
+  .user-doc-badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 10px; border-radius: 12px;
+    background: var(--surface); border: 1px solid var(--border);
+    font-size: 12px; cursor: pointer; transition: all .15s;
+    max-width: 240px;
+  }
+  .user-doc-badge:hover { border-color: var(--accent); color: var(--accent); }
+  .user-doc-badge .ud-name {
+    font-weight: 500; white-space: nowrap; overflow: hidden;
+    text-overflow: ellipsis; max-width: 140px;
+  }
+  .user-doc-badge .ud-meta {
+    color: var(--text-subtle); font-size: 10.5px; flex-shrink: 0;
+  }
   /* Assistant message: no bubble, just content with left avatar */
   .bubble-asst {
     background: transparent;
@@ -228,7 +243,15 @@
   .run-output.error { border-left-color: #ef4444; }
 
   /* ===== Chips ===== */
-  .drag-active { outline: 2px dashed var(--accent); outline-offset: -2px; }
+  .drag-active { outline: 2px dashed var(--accent); outline-offset: -2px; position: relative; }
+  .drag-active::after {
+    content: '松开以上传文件'; position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--accent); font-size: 14px; font-weight: 600;
+    pointer-events: none; background: rgba(255,255,255,.65);
+    border-radius: inherit; z-index: 10;
+  }
+  .dark .drag-active::after { background: rgba(0,0,0,.45); }
   .tag-chip {
     display: inline-block; font-size: 10px; padding: 1.5px 7px;
     background: var(--accent-soft); color: var(--accent-hover);
@@ -242,12 +265,20 @@
     background: var(--surface-2); border: 1px solid var(--border);
     border-radius: 8px; font-size: 12px;
   }
-  .url-chip.loading { border-color: var(--accent); }
-  .url-chip.error { background: #fef2f2; border-color: #fecaca; color: #991b1b; }
-  .dark .url-chip.error { background: #450a0a; border-color: #7f1d1d; color: #fca5a5; }
+  .url-chip.loading, .doc-chip.loading { border-color: var(--accent); }
+  .url-chip.error, .doc-chip.error { background: #fef2f2; border-color: #fecaca; color: #991b1b; }
+  .dark .url-chip.error, .dark .doc-chip.error { background: #450a0a; border-color: #7f1d1d; color: #fca5a5; }
+  .doc-chip .name { cursor: pointer; }
+  .doc-chip .name:hover { color: var(--accent); text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 2px; }
   .url-chip .meta, .doc-chip .meta { color: var(--text-subtle); font-size: 10px; }
   .url-chip .close, .doc-chip .close { cursor: pointer; color: var(--text-subtle); margin-left: 4px; }
   .url-chip .close:hover, .doc-chip .close:hover { color: #ef4444; }
+  .chip-spinner {
+    width: 10px; height: 10px; border-radius: 50%;
+    border: 1.5px solid var(--accent); border-top-color: transparent;
+    animation: chipSpin .8s linear infinite; display: inline-block;
+  }
+  @keyframes chipSpin { to { transform: rotate(360deg); } }
 
   /* ===== Followup chips ===== */
   .followup-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; padding-left: 40px; }
@@ -445,6 +476,92 @@
   .todo-item.in_progress { background: var(--accent-soft); border-left-color: var(--accent); font-weight: 500; color: var(--accent-hover); }
   .todo-icon { flex-shrink: 0; }
 
+  /* ===== Artifact Preview Panel ===== */
+  .artifact-panel {
+    flex-shrink: 0; width: 480px; display: flex; flex-direction: column;
+    background: var(--surface); border-left: 1px solid var(--border);
+    transition: width .25s ease;
+    overflow: hidden;
+  }
+  .artifact-panel.hidden { display: none; }
+  .artifact-panel.fullscreen {
+    position: fixed; inset: 0; width: 100% !important; z-index: 55;
+    border-left: none;
+  }
+  .artifact-panel-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 14px; border-bottom: 1px solid var(--border);
+    gap: 8px; flex-shrink: 0;
+  }
+  .artifact-tabs {
+    display: flex; align-items: center; gap: 4px;
+    overflow-x: auto; flex: 1; min-width: 0;
+  }
+  .artifact-tabs::-webkit-scrollbar { height: 0; }
+  .artifact-tab-label {
+    font-size: 13px; font-weight: 600; color: var(--text);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .artifact-tab {
+    padding: 4px 10px; border-radius: 6px; font-size: 12px;
+    background: transparent; border: 1px solid var(--border);
+    color: var(--text-muted); cursor: pointer;
+    white-space: nowrap; transition: all .15s;
+  }
+  .artifact-tab:hover { background: var(--surface-2); color: var(--text); }
+  .artifact-tab.active { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); font-weight: 600; }
+  .artifact-panel-controls {
+    display: flex; align-items: center; gap: 2px; flex-shrink: 0;
+  }
+  .artifact-panel-controls button {
+    padding: 4px 8px; border-radius: 6px; font-size: 13px;
+    background: transparent; border: none; color: var(--text-muted);
+    cursor: pointer; transition: all .15s; line-height: 1;
+  }
+  .artifact-panel-controls button:hover { background: var(--surface-2); color: var(--text); }
+  .artifact-view-toggle {
+    display: inline-flex; align-items: center; gap: 0;
+    background: var(--surface-2); border: 1px solid var(--border);
+    border-radius: 6px; padding: 2px; margin-right: 4px;
+  }
+  .artifact-view-toggle button {
+    padding: 3px 10px; border-radius: 4px; font-size: 12px;
+    background: transparent; border: none; color: var(--text-muted);
+    cursor: pointer; transition: all .15s; line-height: 1.4;
+  }
+  .artifact-view-toggle button.active {
+    background: var(--surface); color: var(--text); font-weight: 600;
+    box-shadow: var(--shadow-sm);
+  }
+  .artifact-panel-body {
+    flex: 1; overflow: hidden; position: relative;
+    background: #ffffff;
+  }
+  .dark .artifact-panel-body { background: #1a1a1a; }
+  .artifact-iframe { width: 100%; height: 100%; border: none; display: block; }
+  .artifact-iframe.hidden { display: none; }
+  .artifact-code-view {
+    width: 100%; height: 100%; overflow: auto;
+    background: var(--surface); margin: 0;
+  }
+  .artifact-code-view.hidden { display: none; }
+  .artifact-code-view pre {
+    margin: 0; padding: 14px 16px; font-size: 12.5px; line-height: 1.55;
+    background: transparent; border: none; border-radius: 0;
+  }
+  .artifact-code-view code { font-family: ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
+  .preview-btn {
+    position: absolute; top: 8px; right: 62px;
+    background: rgba(59,130,246,.18); color: #2563eb;
+    border: none; border-radius: 4px; padding: 3px 8px;
+    font-size: 12px; cursor: pointer; opacity: .85;
+    transition: opacity .15s, background .15s; z-index: 2;
+  }
+  .dark .preview-btn { color: #93c5fd; }
+  .prose-custom pre:hover .preview-btn { opacity: 1; }
+  .preview-btn:hover { background: rgba(59,130,246,.35); opacity: 1; }
+  .prose-custom pre:has(.run-btn) .preview-btn { right: 116px; }
+
   /* ===== Empty state ===== */
   .empty-hero {
     display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -499,6 +616,7 @@
     .sidebar-toggle { display: inline-flex; }
     .todo-panel { right: 10px; left: 10px; width: auto; top: 66px; }
     .empty-cards { grid-template-columns: 1fr; }
+    .artifact-panel { position: fixed; inset: 0; width: 100% !important; z-index: 45; border-left: none; }
   }
 
   /* ===== Utility: subtle divider ===== */
@@ -682,6 +800,7 @@
       <button id="headerMoreBtn" class="sb-icon-btn" title="工作目录 / 权限策略">⋯</button>
       <button id="helpBtn" class="sb-icon-btn relative" title="帮助 / 快捷键 / 更新日志">?<span id="helpBadge" class="hidden absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full" style="background:#ef4444;"></span></button>
       <button id="exportBtn" class="sb-icon-btn" title="导出 Markdown">📥</button>
+      <button id="reopenArtifactBtn" class="sb-icon-btn hidden" title="重新打开 Artifact 面板">📐<span id="reopenArtifactCount" class="ml-1 text-[10px]" style="color:var(--accent);"></span></button>
     </div>
   </header>
 
@@ -745,7 +864,7 @@
     <form id="form" class="max-w-3xl mx-auto relative">
       <input type="file" id="fileInput" accept="image/*" multiple class="hidden" />
       <input type="file" id="docInput" multiple class="hidden" />
-      <div class="composer" id="composer">
+      <div class="composer relative" id="composer">
         <textarea id="input" rows="1" placeholder="输入消息，让 Claude 帮你..."
           class="composer-textarea"></textarea>
         <div class="composer-actions">
@@ -777,6 +896,29 @@
       </div>
     </form>
   </footer>
+</div>
+
+<!-- Artifact Preview Panel -->
+<div id="artifactPanel" class="artifact-panel hidden">
+  <div class="artifact-panel-header">
+    <div class="artifact-tabs" id="artifactTabs"></div>
+    <div class="artifact-panel-controls">
+      <div class="artifact-view-toggle" id="artifactViewToggle">
+        <button data-view="preview" class="active" title="预览">预览</button>
+        <button data-view="code" title="源码">源码</button>
+      </div>
+      <button id="artifactCopyBtn" title="复制代码">📋</button>
+      <button id="artifactDownloadBtn" title="下载文件">⬇️</button>
+      <button id="artifactFullscreenBtn" title="全屏">⛶</button>
+      <button id="artifactCloseBtn" title="关闭">✕</button>
+    </div>
+  </div>
+  <div class="artifact-panel-body">
+    <iframe id="artifactIframe" class="artifact-iframe"
+            sandbox="allow-scripts"
+            title="Artifact Preview"></iframe>
+    <div id="artifactCodeView" class="artifact-code-view hidden"><pre><code id="artifactCodeBlock"></code></pre></div>
+  </div>
 </div>
 
 <!-- Settings modal -->
@@ -1050,6 +1192,7 @@ let pendingImages = [];
 let pendingImageKeys = new Set();
 let activeImageUploadKeys = new Set();
 let activeImageUploadPromises = new Set();
+const activeDocUploadPromises = new Set();
 let pendingImageGeneration = 0;
 let currentController = null;
 let archivedView = false;
@@ -1087,6 +1230,18 @@ const todoProgress = $('todoProgress');
 const todoProgressFill = $('todoProgressFill');
 const todoCollapseBtn = $('todoCollapseBtn');
 const todoCloseBtn = $('todoCloseBtn');
+const artifactPanel = $('artifactPanel');
+const artifactTabs = $('artifactTabs');
+const artifactIframe = $('artifactIframe');
+const artifactCodeView = $('artifactCodeView');
+const artifactCodeBlock = $('artifactCodeBlock');
+const artifactViewToggle = $('artifactViewToggle');
+const artifactCloseBtn = $('artifactCloseBtn');
+const reopenArtifactBtn = $('reopenArtifactBtn');
+const reopenArtifactCount = $('reopenArtifactCount');
+const artifactFullscreenBtn = $('artifactFullscreenBtn');
+const artifactDownloadBtn = $('artifactDownloadBtn');
+const artifactCopyBtn = $('artifactCopyBtn');
 const searchInput = $('searchInput');
 const modelSelect = $('modelSelect');
 const permSelect = $('permSelect');
@@ -1395,21 +1550,39 @@ function openLightbox(src) {
 lightbox.addEventListener('click', () => lightbox.classList.add('hidden'));
 
 // ===== message rendering =====
+function renderUserDocBadges(docs) {
+  if (!docs || !docs.length) return '';
+  const items = docs.map((d, i) => {
+    const sizeLabel = d.size ? formatFileSize(d.size) : '';
+    const charsLabel = d.length ? (d.length >= 10000 ? (d.length / 10000).toFixed(1) + ' 万字' : d.length + ' 字') : '';
+    const meta = [sizeLabel, charsLabel].filter(Boolean).join(' · ');
+    const safeName = escapeHtml(d.name || '文档');
+    const safeMeta = escapeHtml(meta);
+    return `<span class="user-doc-badge" data-user-doc-idx="${i}" title="点击预览">📄 <span class="ud-name">${safeName}</span>${safeMeta ? `<span class="ud-meta">${safeMeta}</span>` : ''}</span>`;
+  }).join('');
+  return `<div class="flex flex-wrap gap-1.5 justify-end mb-1">${items}</div>`;
+}
+
 function addUserMessage(text, images, opts) {
   opts = opts || {};
   const userIdx = opts.userIndex !== undefined ? opts.userIndex : currentUserIndex++;
   const hasCheckpoint = !!opts.hasCheckpoint;
+  const docs = Array.isArray(opts.docs) ? opts.docs : [];
+  const fullText = typeof opts.fullText === 'string' ? opts.fullText : '';
   lastUserIndex = userIdx;
   removeWelcome();
   const el = document.createElement('div');
   el.className = 'flex justify-end user-msg-wrap msg-enter';
   el.dataset.userIndex = String(userIdx);
+  if (fullText) el.dataset.fullText = fullText;
   const imagesHtml = (images && images.length) ? `
     <div class="flex flex-wrap gap-2 justify-end mb-1">
       ${images.map(p => `<img src="/uploads/${encodeURIComponent(pathBasename(p))}" class="max-w-[180px] max-h-[180px] rounded-lg cursor-zoom-in" style="border:1px solid var(--border);" data-lightbox />`).join('')}
     </div>` : '';
+  const docsHtml = renderUserDocBadges(docs);
   el.innerHTML = `
     <div class="max-w-[75%] group relative user-msg-bubble" data-user-index="${userIdx}">
+      ${docsHtml}
       ${imagesHtml}
       <div class="bubble-user user-msg-text">${escapeHtml(text)}</div>
       <div class="user-msg-actions absolute -left-24 top-2 opacity-0 group-hover:opacity-100 flex flex-col gap-1 text-xs" style="color:var(--text-subtle);">
@@ -1420,6 +1593,15 @@ function addUserMessage(text, images, opts) {
     </div>
   `;
   el.querySelectorAll('[data-lightbox]').forEach(img => img.addEventListener('click', () => openLightbox(img.src)));
+  if (docs.length) {
+    el.querySelectorAll('[data-user-doc-idx]').forEach(badge => {
+      badge.addEventListener('click', () => {
+        const i = Number(badge.dataset.userDocIdx);
+        const doc = docs[i];
+        if (doc) openHistoricalDocPreview(doc, el);
+      });
+    });
+  }
   chatInner.appendChild(el);
   forceScrollBottom();
 }
@@ -1456,6 +1638,7 @@ function addTextBlock(container, text) {
     });
     pre.appendChild(btn);
     attachRunButton(pre, code);
+    attachPreviewButton(pre, code);
   });
   container.appendChild(block);
   postProcessRendered(block);
@@ -1812,6 +1995,346 @@ function hideTodoPanel() {
 todoCloseBtn.addEventListener('click', hideTodoPanel);
 todoCollapseBtn.addEventListener('click', () => toggleTodoCollapse());
 
+// ===== Artifact Preview Panel =====
+const artifacts = [];
+let activeArtifactIndex = -1;
+let artifactViewMode = 'preview'; // 'preview' | 'code'
+const ARTIFACT_DEBOUNCE_MS = 500;
+const pendingArtifactTimers = new Set();
+let artifactStreamGeneration = 0;
+let mutedArtifactGeneration = -1;
+
+function previewLangFromCode(lang, code) {
+  const normalizedLang = (lang || '').toLowerCase();
+  const text = code || '';
+  const trimmed = text.trim();
+  if (normalizedLang === 'svg' || (!normalizedLang && /^<svg[\s>]/i.test(trimmed))) return 'svg';
+  if ((normalizedLang === 'html' || normalizedLang === 'htm') && text.length > 20 && /<[a-z][^>]*>/i.test(text)) return 'html';
+  if (!normalizedLang && /<!DOCTYPE\s+html|<html[\s>]/i.test(trimmed)) return 'html';
+  return null;
+}
+
+function streamingArtifactCandidates(text) {
+  const source = text || '';
+  const fenceRe = /```([a-z0-9_-]*)[^\n]*\n([\s\S]*?)(?:```|$)/gi;
+  let match;
+  const candidates = [];
+  while ((match = fenceRe.exec(source)) !== null) {
+    const lang = (match[1] || '').toLowerCase();
+    const code = match[2] || '';
+    const previewLang = previewLangFromCode(lang, code);
+    if (previewLang) candidates.push({ code: code.trimEnd(), lang: previewLang });
+  }
+  if (candidates.length) return candidates;
+
+  const trimmed = source.trim();
+  const rawLang = previewLangFromCode('', trimmed);
+  if (rawLang && /^(?:<!DOCTYPE\s+html|<html[\s>]|<svg[\s>])/i.test(trimmed)) {
+    return [{ code: trimmed, lang: rawLang }];
+  }
+  return [];
+}
+
+function clearArtifactDebounce(block) {
+  if (!block || !block._artifactDebounce) return;
+  clearTimeout(block._artifactDebounce);
+  pendingArtifactTimers.delete(block._artifactDebounce);
+  block._artifactDebounce = null;
+}
+
+function scheduleArtifactDebounce(block, fn) {
+  clearArtifactDebounce(block);
+  const timer = setTimeout(() => {
+    pendingArtifactTimers.delete(timer);
+    if (block._artifactDebounce === timer) block._artifactDebounce = null;
+    fn();
+  }, ARTIFACT_DEBOUNCE_MS);
+  block._artifactDebounce = timer;
+  pendingArtifactTimers.add(timer);
+}
+
+function clearAllArtifactDebounces() {
+  pendingArtifactTimers.forEach(timer => clearTimeout(timer));
+  pendingArtifactTimers.clear();
+}
+
+function streamArtifactId(msgId, blockIdx, candidateIdx) {
+  return 'stream-' + (msgId || '') + '-' + blockIdx + '-' + candidateIdx;
+}
+
+function syncStreamingArtifacts(state, blockIdx, candidates, { openPanel = true } = {}) {
+  const prefix = 'stream-' + (state.msgId || '') + '-' + blockIdx + '-';
+  let firstNewIndex = -1;
+  candidates.forEach((candidate, candidateIdx) => {
+    const artId = streamArtifactId(state.msgId, blockIdx, candidateIdx);
+    const label = candidate.lang.toUpperCase() + ' (streaming)';
+    let ai = artifacts.findIndex(a => a.id === artId);
+    if (ai === -1) {
+      artifacts.push({ id: artId, label, code: candidate.code, lang: candidate.lang, sourceEl: state.blocks[blockIdx]?.el });
+      ai = artifacts.length - 1;
+      if (firstNewIndex === -1) firstNewIndex = ai;
+    } else {
+      artifacts[ai].code = candidate.code;
+      artifacts[ai].lang = candidate.lang;
+      artifacts[ai].label = label;
+    }
+  });
+
+  for (let i = artifacts.length - 1; i >= 0; i -= 1) {
+    if (artifacts[i].id && artifacts[i].id.startsWith(prefix)) {
+      const candidateIdx = Number(artifacts[i].id.slice(prefix.length));
+      if (!Number.isInteger(candidateIdx) || candidateIdx >= candidates.length) {
+        artifacts.splice(i, 1);
+        if (activeArtifactIndex > i) activeArtifactIndex -= 1;
+        else if (activeArtifactIndex === i) activeArtifactIndex = Math.min(i, artifacts.length - 1);
+      }
+    }
+  }
+
+  if (artifacts.length === 0) {
+    activeArtifactIndex = -1;
+    artifactTabs.innerHTML = '';
+    artifactIframe.removeAttribute('srcdoc');
+    artifactCodeBlock.textContent = '';
+    updateReopenArtifactBtn();
+    return;
+  }
+
+  if (activeArtifactIndex < 0 || activeArtifactIndex >= artifacts.length) {
+    activeArtifactIndex = firstNewIndex !== -1 ? firstNewIndex : artifacts.length - 1;
+  } else if (firstNewIndex !== -1 && artifactPanel.classList.contains('hidden')) {
+    activeArtifactIndex = firstNewIndex;
+  }
+
+  if (firstNewIndex !== -1) artifactViewMode = 'preview';
+  renderArtifactTabs();
+  if (!artifactPanel.classList.contains('hidden')) renderArtifactPreview();
+  if (openPanel && mutedArtifactGeneration !== artifactStreamGeneration) {
+    artifactPanel.classList.remove('hidden');
+    renderArtifactPreview();
+  }
+  updateReopenArtifactBtn();
+}
+
+function reconcileStreamingArtifacts(state, blockIdx, previewEntries) {
+  const prefix = 'stream-' + (state.msgId || '') + '-' + blockIdx + '-';
+  const seenIds = new Set();
+  previewEntries.forEach((entry, candidateIdx) => {
+    const artId = streamArtifactId(state.msgId, blockIdx, candidateIdx);
+    seenIds.add(artId);
+    let ai = artifacts.findIndex(a => a.id === artId);
+    if (ai === -1) return;
+    artifacts[ai].sourceEl = entry.pre;
+    artifacts[ai].code = entry.code;
+    artifacts[ai].lang = entry.lang;
+    artifacts[ai].label = entry.lang.toUpperCase() + ' Preview';
+  });
+
+  for (let i = artifacts.length - 1; i >= 0; i -= 1) {
+    if (artifacts[i].id && artifacts[i].id.startsWith(prefix) && !seenIds.has(artifacts[i].id)) {
+      artifacts.splice(i, 1);
+      if (activeArtifactIndex > i) activeArtifactIndex -= 1;
+      else if (activeArtifactIndex === i) activeArtifactIndex = Math.min(i, artifacts.length - 1);
+    }
+  }
+
+  if (artifacts.length === 0) {
+    activeArtifactIndex = -1;
+    artifactTabs.innerHTML = '';
+    artifactIframe.removeAttribute('srcdoc');
+    artifactCodeBlock.textContent = '';
+  } else {
+    if (activeArtifactIndex < 0 || activeArtifactIndex >= artifacts.length) activeArtifactIndex = artifacts.length - 1;
+    renderArtifactTabs();
+    if (!artifactPanel.classList.contains('hidden')) renderArtifactPreview();
+  }
+  updateReopenArtifactBtn();
+}
+
+function isPreviewableCode(preEl) {
+  const codeEl = preEl.querySelector('code');
+  if (!codeEl) return null;
+  const cls = codeEl.className || '';
+  const langMatch = cls.match(/language-([a-z0-9]+)/i);
+  const lang = langMatch ? langMatch[1].toLowerCase() : null;
+  const code = codeEl.textContent || '';
+  return previewLangFromCode(lang, code);
+}
+
+function attachPreviewButton(pre, code) {
+  const previewLang = isPreviewableCode(pre);
+  if (!previewLang) return null;
+  const btn = document.createElement('button');
+  btn.className = 'preview-btn';
+  btn.textContent = '👁 Preview';
+  btn.title = '在侧边面板预览';
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const id = 'art-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
+    const label = previewLang.toUpperCase() + ' Preview';
+    openArtifact({ id, label, code, lang: previewLang, sourceEl: pre });
+  });
+  pre.appendChild(btn);
+  return previewLang;
+}
+
+function openArtifact({ id, label, code, lang, sourceEl }) {
+  mutedArtifactGeneration = -1;
+  let idx = artifacts.findIndex(a => a.sourceEl === sourceEl);
+  let isNew = false;
+  if (idx === -1) {
+    artifacts.push({ id, label, code, lang, sourceEl });
+    idx = artifacts.length - 1;
+    isNew = true;
+  } else {
+    artifacts[idx].id = id;
+    artifacts[idx].code = code;
+    artifacts[idx].label = label;
+    artifacts[idx].lang = lang;
+    artifacts[idx].sourceEl = sourceEl;
+  }
+  activeArtifactIndex = idx;
+  // Reset to preview when opening a new artifact, so users see the rendered output first.
+  if (isNew) artifactViewMode = 'preview';
+  renderArtifactTabs();
+  renderArtifactPreview();
+  artifactPanel.classList.remove('hidden');
+  updateReopenArtifactBtn();
+}
+
+function hideArtifactPanel() {
+  mutedArtifactGeneration = artifactStreamGeneration;
+  clearAllArtifactDebounces();
+  artifactPanel.classList.add('hidden');
+  artifactPanel.classList.remove('fullscreen');
+  artifactFullscreenBtn.textContent = '⛶';
+  artifactIframe.removeAttribute('srcdoc');
+  // Keep artifacts[] for the current session — show reopen button so user can return.
+  updateReopenArtifactBtn();
+}
+
+function clearArtifacts() {
+  clearAllArtifactDebounces();
+  mutedArtifactGeneration = -1;
+  artifacts.length = 0;
+  activeArtifactIndex = -1;
+  artifactViewMode = 'preview';
+  artifactIframe.removeAttribute('srcdoc');
+  artifactCodeBlock.textContent = '';
+  artifactTabs.innerHTML = '';
+  artifactPanel.classList.add('hidden');
+  artifactPanel.classList.remove('fullscreen');
+  artifactFullscreenBtn.textContent = '⛶';
+  updateReopenArtifactBtn();
+}
+
+function updateReopenArtifactBtn() {
+  const hidden = artifactPanel.classList.contains('hidden');
+  const has = artifacts.length > 0;
+  if (hidden && has) {
+    reopenArtifactBtn.classList.remove('hidden');
+    reopenArtifactCount.textContent = String(artifacts.length);
+  } else {
+    reopenArtifactBtn.classList.add('hidden');
+    reopenArtifactCount.textContent = '';
+  }
+}
+
+reopenArtifactBtn.addEventListener('click', () => {
+  if (!artifacts.length) return;
+  mutedArtifactGeneration = -1;
+  if (activeArtifactIndex < 0 || activeArtifactIndex >= artifacts.length) {
+    activeArtifactIndex = artifacts.length - 1;
+  }
+  artifactPanel.classList.remove('hidden');
+  renderArtifactTabs();
+  renderArtifactPreview();
+  updateReopenArtifactBtn();
+});
+
+function toggleArtifactFullscreen() {
+  artifactPanel.classList.toggle('fullscreen');
+  artifactFullscreenBtn.textContent = artifactPanel.classList.contains('fullscreen') ? '⊡' : '⛶';
+}
+
+function renderArtifactTabs() {
+  const art = artifacts[activeArtifactIndex];
+  if (!art) return;
+  if (artifacts.length <= 1) {
+    artifactTabs.innerHTML = '<span class="artifact-tab-label">' + escapeHtml(art.label) + '</span>';
+    return;
+  }
+  artifactTabs.innerHTML = artifacts.map((a, i) =>
+    '<button class="artifact-tab' + (i === activeArtifactIndex ? ' active' : '') +
+    '" data-idx="' + i + '">' + escapeHtml(a.label) + '</button>'
+  ).join('');
+  artifactTabs.querySelectorAll('.artifact-tab').forEach(btn => {
+    btn.addEventListener('click', () => {
+      activeArtifactIndex = Number(btn.dataset.idx);
+      renderArtifactTabs();
+      renderArtifactPreview();
+    });
+  });
+}
+
+function renderArtifactPreview() {
+  const art = artifacts[activeArtifactIndex];
+  if (!art) return;
+  // Render preview iframe
+  let html = art.code;
+  if (art.lang === 'svg') {
+    html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><style>body{margin:0;display:flex;align-items:center;justify-content:center;min-height:100vh;background:#fff;}'
+      + '@media(prefers-color-scheme:dark){body{background:#1c1917;}}</style></head><body>' + art.code + '</body></html>';
+  } else if (!/<!DOCTYPE|<html/i.test(html)) {
+    html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
+      + '<style>body{margin:16px;font-family:system-ui,-apple-system,sans-serif;color:#1a1a1a;}'
+      + '@media(prefers-color-scheme:dark){body{background:#1a1a1a;color:#e5e5e5;}}</style></head><body>' + art.code + '</body></html>';
+  }
+  artifactIframe.srcdoc = html;
+  // Render code view (highlighted)
+  const codeLang = art.lang === 'svg' ? 'xml' : 'html';
+  try {
+    artifactCodeBlock.innerHTML = hljs.highlight(art.code, { language: codeLang, ignoreIllegals: true }).value;
+  } catch {
+    artifactCodeBlock.textContent = art.code;
+  }
+  applyArtifactView();
+}
+
+function applyArtifactView() {
+  const preview = artifactViewMode === 'preview';
+  artifactIframe.classList.toggle('hidden', !preview);
+  artifactCodeView.classList.toggle('hidden', preview);
+  artifactViewToggle.querySelectorAll('button').forEach(b => {
+    b.classList.toggle('active', b.dataset.view === artifactViewMode);
+  });
+}
+
+artifactCloseBtn.addEventListener('click', () => hideArtifactPanel());
+artifactFullscreenBtn.addEventListener('click', toggleArtifactFullscreen);
+artifactViewToggle.addEventListener('click', (e) => {
+  const btn = e.target.closest('button[data-view]');
+  if (!btn) return;
+  artifactViewMode = btn.dataset.view;
+  applyArtifactView();
+});
+artifactDownloadBtn.addEventListener('click', () => {
+  const art = artifacts[activeArtifactIndex];
+  if (!art) return;
+  const ext = art.lang === 'svg' ? 'svg' : 'html';
+  const mime = art.lang === 'svg' ? 'image/svg+xml' : 'text/html';
+  const blob = new Blob([art.code], { type: mime });
+  downloadBlob(blob, 'artifact.' + ext);
+});
+artifactCopyBtn.addEventListener('click', () => {
+  const art = artifacts[activeArtifactIndex];
+  if (!art) return;
+  navigator.clipboard.writeText(art.code);
+  const orig = artifactCopyBtn.textContent;
+  artifactCopyBtn.textContent = '✓';
+  setTimeout(() => artifactCopyBtn.textContent = orig, 1200);
+});
+
 function createThinkingIndicator(label) {
   const el = document.createElement('div');
   el.className = 'thinking-indicator';
@@ -1864,7 +2387,7 @@ function handleEvent(obj, container) {
   if (obj.type === 'stream_event' && obj.event) {
     return handleStreamEvent(obj.event, container);
   }
-  if (obj.type === 'user_input') { addUserMessage(obj.text || '', obj.images || []); return null; }
+  if (obj.type === 'user_input') { addUserMessage(obj.text || '', obj.images || [], { docs: obj.docs || [], fullText: obj.full_text || '' }); return null; }
   if (obj.type === 'assistant' && obj.message) {
     const msgId = obj.message.id;
     const wasStreamed = msgId && streamedIds.has(msgId);
@@ -1918,7 +2441,8 @@ function handleStreamEvent(ev, container) {
     const msg = ev.message || {};
     const msgId = msg.id || ('stream-' + Date.now());
     if (!container) container = newAssistantBubble();
-    streamingMessages[msgId] = { container, blocks: {} };
+    artifactStreamGeneration += 1;
+    streamingMessages[msgId] = { container, blocks: {}, msgId };
     streamedIds.add(msgId);
     lastStreamingMsgId = msgId;
     return container;
@@ -1959,6 +2483,13 @@ function handleStreamEvent(ev, container) {
       block.text += d.text || '';
       block.el.textContent = block.text;
       scrollBottom();
+      scheduleArtifactDebounce(block, () => {
+        const candidates = streamingArtifactCandidates(block.text);
+        if (!candidates.length) return;
+        syncStreamingArtifacts(state, idx, candidates, {
+          openPanel: mutedArtifactGeneration !== artifactStreamGeneration,
+        });
+      });
     } else if (d.type === 'thinking_delta' && block.type === 'thinking') {
       block.text += d.thinking || '';
       const c = block.el.querySelector('.stream-content');
@@ -1971,6 +2502,8 @@ function handleStreamEvent(ev, container) {
     const block = state.blocks[ev.index];
     if (!block) return container;
     if (block.type === 'text' && block.el) {
+      clearArtifactDebounce(block);
+      const previewEntries = [];
       const text = block.text;
       const el = block.el;
       el.classList.remove('whitespace-pre-wrap', 'break-words');
@@ -1989,7 +2522,16 @@ function handleStreamEvent(ev, container) {
         });
         pre.appendChild(btn);
         attachRunButton(pre, code);
+        const previewLang = attachPreviewButton(pre, code);
+        if (previewLang) previewEntries.push({ pre, code, lang: previewLang });
       });
+      if (!previewEntries.length) {
+        const rawCandidates = streamingArtifactCandidates(text);
+        if (rawCandidates.length === 1) {
+          previewEntries.push({ pre: el, code: rawCandidates[0].code, lang: rawCandidates[0].lang });
+        }
+      }
+      reconcileStreamingArtifacts(state, ev.index, previewEntries);
       postProcessRendered(el);
     } else if (block.type === 'thinking' && block.el) {
       const summary = block.el.querySelector('summary');
@@ -2264,13 +2806,26 @@ document.addEventListener('paste', async (e) => {
   }
   if (handled) e.preventDefault();
 });
-['dragenter','dragover'].forEach(ev => {
-  form.addEventListener(ev, (e) => { e.preventDefault(); form.classList.add('drag-active'); });
+let _formDragDepth = 0;
+form.addEventListener('dragenter', (e) => {
+  if (!e.dataTransfer || !Array.from(e.dataTransfer.types || []).includes('Files')) return;
+  e.preventDefault();
+  _formDragDepth += 1;
+  form.classList.add('drag-active');
 });
-['dragleave','drop'].forEach(ev => {
-  form.addEventListener(ev, (e) => { e.preventDefault(); form.classList.remove('drag-active'); });
+form.addEventListener('dragover', (e) => {
+  if (!e.dataTransfer || !Array.from(e.dataTransfer.types || []).includes('Files')) return;
+  e.preventDefault();
+});
+form.addEventListener('dragleave', (e) => {
+  if (!e.dataTransfer || !Array.from(e.dataTransfer.types || []).includes('Files')) return;
+  _formDragDepth = Math.max(0, _formDragDepth - 1);
+  if (_formDragDepth === 0) form.classList.remove('drag-active');
 });
 form.addEventListener('drop', (e) => {
+  e.preventDefault();
+  _formDragDepth = 0;
+  form.classList.remove('drag-active');
   const files = Array.from(e.dataTransfer?.files || []);
   for (const f of files) handleInputFile(f);
 });
@@ -2397,9 +2952,9 @@ function buildPermissionPayload() {
 }
 
 async function send(message) {
-  if (activeImageUploadPromises.size > 0) {
+  if (activeImageUploadPromises.size > 0 || activeDocUploadPromises.size > 0) {
     sendBtn.disabled = true;
-    try { await waitForImageUploads(); }
+    try { await Promise.all([waitForImageUploads(), waitForDocUploads()]); }
     finally { sendBtn.disabled = false; }
   }
   return sendCore(message, null, pendingImages.map(i => i.path));
@@ -2423,6 +2978,11 @@ async function sendCore(message, displayMessage, imagePaths, options = {}) {
 
   let actualMessage = message;
   let actualDisplay = displayMessage;
+  // Snapshot doc metadata before clearDocs() so we can both render badges and persist to server.
+  const docMetadata = !isFork
+    ? pendingDocs.filter(d => d.status !== 'error' && d.content)
+        .map(d => ({ name: d.name, size: d.size, length: d.length, path: d.path || null }))
+    : [];
   if (!isFork) {
     const urlBlock = composeUrlContext();
     const docBlock = composeDocContext();
@@ -2434,7 +2994,7 @@ async function sendCore(message, displayMessage, imagePaths, options = {}) {
   }
 
   if (!isFork) {
-    addUserMessage(message, imagePaths);
+    addUserMessage(message, imagePaths, { docs: docMetadata, fullText: actualMessage !== message ? actualMessage : '' });
     clearPendingImages();
     clearDraft();
     clearUrlContext();
@@ -2464,6 +3024,7 @@ async function sendCore(message, displayMessage, imagePaths, options = {}) {
         session_id: sessionId,
         cwd: cwdInput.value.trim() || null,
         images: imagePaths,
+        docs: docMetadata.length ? docMetadata : null,
         model: modelSelect.value || null,
         system_prompt: settings.systemPrompt || null,
         display_message: actualDisplay || null,
@@ -2525,11 +3086,13 @@ stopBtn.addEventListener('click', async () => {
 form.addEventListener('submit', (e) => {
   e.preventDefault();
   const text = input.value.trim();
-  if (!text && pendingImages.length === 0 && activeImageUploadPromises.size === 0) return;
+  const readyDocs = pendingDocs.filter(d => d.status === 'ready' && d.content).length;
+  const loadingDocs = pendingDocs.filter(d => d.status === 'loading').length;
+  if (!text && pendingImages.length === 0 && activeImageUploadPromises.size === 0 && readyDocs === 0 && loadingDocs === 0) return;
   input.value = '';
   updateTokenCount();
   autosizeTextarea();
-  send(text || '（仅图片）');
+  send(text || (pendingImages.length > 0 ? '（仅图片）' : '（仅文档）'));
 });
 
 input.addEventListener('keydown', (e) => {
@@ -2572,6 +3135,7 @@ function startNewSession() {
   clearUrlContext();
   clearDocs();
   hideTodoPanel();
+  clearArtifacts();
   currentUserIndex = 0;
   lastUserIndex = -1;
   streamedIds.clear();
@@ -2717,6 +3281,7 @@ async function loadSession(id) {
     streamedIds.clear();
     lastStreamingMsgId = null;
     hideTodoPanel();
+    clearArtifacts();
     currentUserIndex = 0;
     lastUserIndex = -1;
     if (data.cwd) cwdInput.value = data.cwd;
@@ -2728,7 +3293,7 @@ async function loadSession(id) {
     let asstContainer = null;
     for (const ev of data.events) {
       if (ev.type === 'user_input') {
-        addUserMessage(ev.text || '', ev.images || [], { hasCheckpoint: !!ev.checkpoint });
+        addUserMessage(ev.text || '', ev.images || [], { hasCheckpoint: !!ev.checkpoint, docs: ev.docs || [], fullText: ev.full_text || '' });
         asstContainer = null;
       } else if (ev.type === 'assistant' || ev.type === 'user') {
         const c = handleEvent(ev, asstContainer);
@@ -2979,6 +3544,11 @@ document.addEventListener('keydown', (e) => {
   if (mod && e.key.toLowerCase() === 'k') { e.preventDefault(); searchInput.focus(); searchInput.select(); return; }
   if (mod && e.key.toLowerCase() === 'n') { e.preventDefault(); startNewSession(); return; }
   if (e.key === 'Escape') {
+    if (!artifactPanel.classList.contains('hidden')) {
+      if (artifactPanel.classList.contains('fullscreen')) { toggleArtifactFullscreen(); }
+      else { hideArtifactPanel(); }
+      return;
+    }
     if (!$('tourOverlay').classList.contains('hidden')) { hideTour(); return; }
     if (!$('whatsnewToast').classList.contains('hidden')) { dismissWhatsNew(); return; }
     document.querySelectorAll('.modal-backdrop:not(.hidden)').forEach(m => m.classList.add('hidden'));
@@ -3127,16 +3697,56 @@ const pendingDocs = []; // {name, content, length, truncated}
 
 docAttachBtn.addEventListener('click', () => docInput.click());
 
+let _docUid = 0;
+function nextDocUid() { _docUid += 1; return 'doc-' + _docUid; }
+
 async function uploadDocFile(file) {
-  const fd = new FormData();
-  fd.append('file', file);
-  try {
-    const r = await fetch('/api/upload-doc', { method:'POST', body: fd });
-    if (!r.ok) { const d = await r.json().catch(()=>({})); alert('上传失败: ' + (d.detail || r.status)); return; }
-    const data = await r.json();
-    pendingDocs.push(data);
-    renderDocChips();
-  } catch (e) { alert('上传出错: ' + e.message); }
+  const controller = new AbortController();
+  const placeholder = {
+    uid: nextDocUid(),
+    name: file.name,
+    size: file.size,
+    length: 0,
+    content: '',
+    status: 'loading',
+    _abort: controller,
+  };
+  pendingDocs.push(placeholder);
+  renderDocChips();
+  const uploadPromise = (async () => {
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      const r = await fetch('/api/upload-doc', { method: 'POST', body: fd, signal: controller.signal });
+      const idx = pendingDocs.findIndex(d => d.uid === placeholder.uid);
+      if (idx === -1) return; // user removed it during upload
+      if (!r.ok) {
+        const d = await r.json().catch(() => ({}));
+        pendingDocs[idx] = { ...placeholder, status: 'error', error: d.detail || ('HTTP ' + r.status) };
+        renderDocChips();
+        return;
+      }
+      const data = await r.json();
+      pendingDocs[idx] = { ...data, uid: placeholder.uid, status: 'ready' };
+      renderDocChips();
+    } catch (e) {
+      const idx = pendingDocs.findIndex(d => d.uid === placeholder.uid);
+      if (idx === -1) return;
+      if (e.name === 'AbortError') return; // user-initiated cancel, chip already removed
+      pendingDocs[idx] = { ...placeholder, status: 'error', error: e.message };
+      renderDocChips();
+    }
+  })();
+  placeholder._uploadPromise = uploadPromise;
+  activeDocUploadPromises.add(uploadPromise);
+  uploadPromise.finally(() => activeDocUploadPromises.delete(uploadPromise));
+  return uploadPromise;
+}
+
+async function waitForDocUploads() {
+  while (activeDocUploadPromises.size > 0) {
+    await Promise.allSettled(Array.from(activeDocUploadPromises));
+  }
 }
 
 docInput.addEventListener('change', async () => {
@@ -3146,27 +3756,219 @@ docInput.addEventListener('change', async () => {
   renderDocChips();
 });
 
+function formatFileSize(bytes) {
+  if (!bytes && bytes !== 0) return '';
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+  return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+}
+
 function renderDocChips() {
   if (pendingDocs.length === 0) { docChipsEl.classList.add('hidden'); docChipsEl.innerHTML = ''; return; }
   docChipsEl.classList.remove('hidden');
-  docChipsEl.innerHTML = pendingDocs.map((d, i) => `
-    <span class="doc-chip">
-      <span>📄</span>
-      <span class="truncate" style="max-width:160px">${escapeHtml(d.name)}</span>
-      <span style="font-size:10px;color:#64748b">${d.length} 字${d.truncated ? ' (截断)' : ''}</span>
+  docChipsEl.innerHTML = pendingDocs.map((d, i) => {
+    const sizeLabel = d.size ? formatFileSize(d.size) : '';
+    const charsLabel = d.length ? (d.length >= 10000 ? (d.length / 10000).toFixed(1) + ' 万字' : d.length + ' 字') : '';
+    const meta = [sizeLabel, charsLabel].filter(Boolean).join(' · ');
+    const isLoading = d.status === 'loading';
+    const isError = d.status === 'error';
+    const stateClass = isLoading ? ' loading' : (isError ? ' error' : '');
+    const lead = isLoading
+      ? '<span class="chip-spinner" title="上传中..."></span>'
+      : (isError ? '<span title="' + escapeHtml(d.error || '') + '">⚠️</span>' : '📄');
+    const largeWarn = d.large ? ' <span title="文档较长，可能受模型 context 限制" style="color:#f59e0b;">⚠</span>' : '';
+    const previewable = d.status === 'ready' && d.content;
+    const nameClass = previewable ? 'name truncate' : 'truncate';
+    const dataIdxAttr = previewable ? ` data-preview-idx="${i}"` : '';
+    return `
+    <span class="doc-chip${stateClass}">
+      ${lead}
+      <span class="${nameClass}" style="max-width:160px"${dataIdxAttr} title="${escapeHtml(d.name)}">${escapeHtml(d.name)}</span>
+      <span style="font-size:10px;color:#64748b">${isLoading ? '上传中…' : (isError ? escapeHtml(d.error || '上传失败') : meta)}</span>${isLoading || isError ? '' : largeWarn}
       <span class="close" data-doc-idx="${i}">×</span>
     </span>
-  `).join('');
+  `;
+  }).join('');
   docChipsEl.querySelectorAll('[data-doc-idx]').forEach(el => {
-    el.addEventListener('click', () => { pendingDocs.splice(Number(el.dataset.docIdx), 1); renderDocChips(); });
+    el.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const idx = Number(el.dataset.docIdx);
+      const doc = pendingDocs[idx];
+      if (doc && doc.status === 'loading' && doc._abort) {
+        try { doc._abort.abort(); } catch {}
+      }
+      pendingDocs.splice(idx, 1);
+      renderDocChips();
+    });
+  });
+  docChipsEl.querySelectorAll('[data-preview-idx]').forEach(el => {
+    el.addEventListener('click', () => openDocPreview(Number(el.dataset.previewIdx)));
+  });
+}
+
+function _docDownloadUrl(path) {
+  if (!path) return '';
+  const base = pathBasename(path);
+  if (!base) return '';
+  return '/uploads/' + encodeURIComponent(base);
+}
+
+function _docExt(name, path) {
+  const src = name || path || '';
+  const i = src.lastIndexOf('.');
+  return i >= 0 ? src.slice(i + 1).toLowerCase() : '';
+}
+
+function showDocPreviewModal({ name, size, length, content, note, path }) {
+  const PREVIEW_MAX = 4000;
+  const ext = _docExt(name, path);
+  const isPdf = ext === 'pdf';
+  const downloadUrl = _docDownloadUrl(path);
+  const safeContent = content
+    || (isPdf ? '(文本提取不可用 — 可下载原 PDF 或留在「原档」视图查看)' : '(内容不可用 — 历史会话仅保留元数据时无法回看全文)');
+  const preview = safeContent.length > PREVIEW_MAX
+    ? safeContent.slice(0, PREVIEW_MAX) + '\n\n... (后续 ' + (safeContent.length - PREVIEW_MAX) + ' 字省略，发送时仍是全文)'
+    : safeContent;
+  const sizeLabel = size ? formatFileSize(size) : '';
+  const charsLabel = length ? (length >= 10000 ? (length / 10000).toFixed(1) + ' 万字' : length + ' 字') : '';
+  const meta = [sizeLabel, charsLabel, note].filter(Boolean).join(' · ');
+  let modal = document.getElementById('docPreviewModal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'docPreviewModal';
+    modal.className = 'modal-backdrop';
+    modal.innerHTML = `
+      <div class="modal-box p-4" style="max-width:880px; width:92vw; max-height:86vh; display:flex; flex-direction:column;">
+        <div class="flex items-center justify-between mb-2 gap-3">
+          <div class="min-w-0 flex-1">
+            <div id="docPreviewName" class="font-medium text-[14px] truncate"></div>
+            <div id="docPreviewMeta" class="text-[11px]" style="color:var(--text-subtle);"></div>
+          </div>
+          <div class="flex items-center gap-1 flex-shrink-0">
+            <div id="docPreviewModeToggle" class="hidden artifact-view-toggle">
+              <button data-doc-mode="original" class="active" title="原文档">原档</button>
+              <button data-doc-mode="text" title="提取文本">文本</button>
+            </div>
+            <a id="docPreviewDownload" class="composer-btn" title="下载原文件" target="_blank" rel="noopener" style="text-decoration:none; display:none;">⬇️</a>
+            <button id="docPreviewClose" class="composer-btn" title="关闭">✕</button>
+          </div>
+        </div>
+        <iframe id="docPreviewIframe" class="hidden" style="flex:1; border:1px solid var(--border); border-radius:8px; background:#fff; min-height:60vh;"></iframe>
+        <pre id="docPreviewBody" class="text-[12px] whitespace-pre-wrap break-words" style="flex:1; overflow:auto; padding:12px; background:var(--surface-2); border-radius:8px; margin:0;"></pre>
+      </div>`;
+    document.body.appendChild(modal);
+    const closeModal = () => {
+      modal.classList.add('hidden');
+      // Release the embedded PDF/iframe so it stops holding memory and won't
+      // flash stale content the next time the modal opens.
+      const ifr = modal.querySelector('#docPreviewIframe');
+      if (ifr) { ifr.removeAttribute('src'); ifr.classList.add('hidden'); }
+    };
+    modal.addEventListener('click', (e) => { if (e.target === modal) closeModal(); });
+    modal.querySelector('#docPreviewClose').addEventListener('click', closeModal);
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && !modal.classList.contains('hidden')) closeModal();
+    });
+    modal.querySelector('#docPreviewModeToggle').addEventListener('click', (e) => {
+      const btn = e.target.closest('button[data-doc-mode]');
+      if (!btn) return;
+      const mode = btn.dataset.docMode;
+      modal._currentMode = mode;
+      modal.querySelectorAll('[data-doc-mode]').forEach(b => b.classList.toggle('active', b.dataset.docMode === mode));
+      const iframe = modal.querySelector('#docPreviewIframe');
+      const body = modal.querySelector('#docPreviewBody');
+      iframe.classList.toggle('hidden', mode !== 'original');
+      body.classList.toggle('hidden', mode === 'original');
+    });
+  }
+  modal.querySelector('#docPreviewName').textContent = name || '文档';
+  modal.querySelector('#docPreviewMeta').textContent = meta;
+  modal.querySelector('#docPreviewBody').textContent = preview;
+  const dl = modal.querySelector('#docPreviewDownload');
+  if (downloadUrl) {
+    dl.href = downloadUrl;
+    dl.setAttribute('download', name || '');
+    dl.style.display = '';
+  } else {
+    dl.style.display = 'none';
+    dl.removeAttribute('href');
+  }
+  const iframe = modal.querySelector('#docPreviewIframe');
+  const body = modal.querySelector('#docPreviewBody');
+  const toggle = modal.querySelector('#docPreviewModeToggle');
+  if (isPdf && downloadUrl) {
+    // Default to original PDF view; toggle visible so user can fall back to text.
+    iframe.src = downloadUrl + '#toolbar=1&view=FitH';
+    iframe.classList.remove('hidden');
+    body.classList.add('hidden');
+    toggle.classList.remove('hidden');
+    toggle.querySelectorAll('button').forEach(b => b.classList.toggle('active', b.dataset.docMode === 'original'));
+    modal._currentMode = 'original';
+  } else {
+    iframe.classList.add('hidden');
+    iframe.removeAttribute('src');
+    body.classList.remove('hidden');
+    toggle.classList.add('hidden');
+    modal._currentMode = 'text';
+  }
+  modal.classList.remove('hidden');
+}
+
+function openDocPreview(idx) {
+  const d = pendingDocs[idx];
+  if (!d || (!d.content && !d.path)) return;
+  showDocPreviewModal({ name: d.name, size: d.size, length: d.length, content: d.content, path: d.path });
+}
+
+async function openHistoricalDocPreview(doc, hostWrap) {
+  // Doc badge metadata persists name/size/length/path. Try in order:
+  //   1) fetch from /api/doc-content (uploads file still on disk)
+  //   2) extract from data-full-text on the host message (always present for
+  //      messages sent with doc injection, since server now stores full_text)
+  //   3) scan visible message text (legacy messages predating full_text)
+  let content = '';
+  let note = '';
+  if (doc.path) {
+    showDocPreviewModal({ name: doc.name, size: doc.size, length: doc.length, content: '加载中…', path: doc.path });
+    try {
+      const r = await fetch('/api/doc-content?path=' + encodeURIComponent(doc.path));
+      if (r.ok) {
+        const data = await r.json();
+        content = data.content || '';
+      } else {
+        const err = await r.json().catch(() => ({}));
+        note = '上传文件已清理或不存在 (' + (err.detail || r.status) + ')';
+      }
+    } catch (e) {
+      note = '加载失败: ' + e.message;
+    }
+  }
+  if (!content) {
+    const escapedName = (doc.name || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const re = new RegExp('【文档: ' + escapedName + '】\\n---\\n([\\s\\S]*?)\\n---', 'm');
+    // Prefer the host bubble's full_text (matches the exact send), else scan all bubbles.
+    const sources = [];
+    if (hostWrap && hostWrap.dataset && hostWrap.dataset.fullText) sources.push(hostWrap.dataset.fullText);
+    chatInner.querySelectorAll('.user-msg-wrap[data-full-text]').forEach(w => {
+      if (w !== hostWrap) sources.push(w.dataset.fullText);
+    });
+    chatInner.querySelectorAll('.user-msg-text').forEach(b => sources.push(b.textContent || ''));
+    for (const src of sources) {
+      const m = src.match(re);
+      if (m) { content = m[1]; note = ''; break; }
+    }
+  }
+  if (!content && !note) note = '历史消息未保留全文';
+  showDocPreviewModal({
+    name: doc.name, size: doc.size, length: doc.length, content, note, path: doc.path,
   });
 }
 
 function composeDocContext() {
-  if (pendingDocs.length === 0) return '';
-  return pendingDocs.map(d => {
-    const suffix = d.truncated ? `\n(已截断，原文共约 ${d.length} 字)` : '';
-    return `【文档: ${d.name}】\n---\n${d.content}\n---${suffix}`;
+  const ready = pendingDocs.filter(d => d.status !== 'error' && d.content);
+  if (ready.length === 0) return '';
+  return ready.map(d => {
+    return `【文档: ${d.name}】\n---\n${d.content}\n---`;
   }).join('\n\n') + '\n\n';
 }
 
