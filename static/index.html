@@ -390,6 +390,251 @@
   @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
   @keyframes slideUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
 
+  /* ===== Prompt optimizer ===== */
+  .po-modal {
+    width: min(1180px, calc(100vw - 44px));
+    max-width: min(1180px, calc(100vw - 44px)) !important;
+    height: min(820px, calc(100vh - 48px));
+    max-height: calc(100vh - 48px);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .po-header {
+    display: flex; align-items: center; justify-content: space-between; gap: 16px;
+    padding: 16px 18px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+  }
+  .po-title-wrap { display: flex; align-items: center; gap: 11px; min-width: 0; }
+  .po-mark {
+    width: 34px; height: 34px; border-radius: 8px;
+    display: inline-flex; align-items: center; justify-content: center;
+    color: var(--accent); background: var(--accent-soft-2);
+    border: 1px solid var(--accent-soft);
+    flex-shrink: 0;
+  }
+  .po-title { font-size: 18px; line-height: 1.25; font-weight: 720; }
+  .po-subtitle {
+    margin-top: 3px; font-size: 12px; line-height: 1.35;
+    color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .po-shell {
+    display: grid; grid-template-columns: 336px minmax(0, 1fr);
+    min-height: 0; flex: 1;
+  }
+  .po-sidebar {
+    padding: 14px; overflow-y: auto; min-height: 0;
+    border-right: 1px solid var(--border);
+    background: var(--surface-2);
+  }
+  .po-main {
+    padding: 16px 18px 18px;
+    overflow-y: auto; min-width: 0; min-height: 0;
+    background: var(--surface);
+  }
+  .po-icon {
+    width: 16px; height: 16px; display: inline-block; flex-shrink: 0;
+    stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+  }
+  .po-icon-sm { width: 14px; height: 14px; }
+  .po-spin { animation: chipSpin .8s linear infinite; }
+  .po-icon-btn, .po-btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    border: 1px solid var(--border); border-radius: 8px;
+    background: var(--surface); color: var(--text);
+    cursor: pointer; transition: background .15s, color .15s, border-color .15s, box-shadow .15s, transform .12s;
+    font-size: 13px; font-weight: 600; line-height: 1;
+  }
+  .po-icon-btn { width: 34px; height: 34px; padding: 0; }
+  .po-btn { min-height: 36px; padding: 0 12px; gap: 7px; }
+  .po-btn.po-grow { flex: 1; }
+  .po-icon-btn:hover, .po-btn:hover { background: var(--surface-2); border-color: var(--accent-soft); color: var(--accent-hover); }
+  .po-icon-btn:active, .po-btn:active { transform: translateY(1px); }
+  .po-icon-btn:disabled, .po-btn:disabled { opacity: .55; cursor: not-allowed; transform: none; }
+  .po-btn.primary {
+    background: var(--accent); border-color: var(--accent); color: #fff;
+    box-shadow: 0 8px 18px rgba(194, 65, 12, .18);
+  }
+  .po-btn.primary:hover { background: var(--accent-hover); color: #fff; border-color: var(--accent-hover); }
+  .po-btn.soft { background: var(--surface-2); }
+  .po-btn.subtle {
+    background: var(--accent-soft-2); color: var(--accent-hover);
+    border-color: var(--accent-soft); box-shadow: none;
+  }
+  .po-btn.subtle:hover { background: var(--accent-soft); color: var(--accent-hover); }
+  .po-btn.compact { min-height: 34px; padding: 0 10px; font-size: 12px; }
+  .po-btn.strong { min-height: 34px; padding: 0 13px; box-shadow: none; }
+  .po-icon-btn.danger { color: #dc2626; }
+  .po-icon-btn.danger:hover { background: #fef2f2; border-color: #fecaca; color: #b91c1c; }
+  .dark .po-icon-btn.danger:hover { background: #450a0a; border-color: #7f1d1d; color: #fca5a5; }
+  .po-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  .po-stat {
+    min-width: 0; padding: 9px 9px 10px;
+    border: 1px solid var(--border); border-radius: 8px;
+    background: var(--surface);
+  }
+  .po-stat-top { display: flex; align-items: center; justify-content: space-between; gap: 6px; color: var(--text-muted); font-size: 11px; }
+  .po-stat-value { margin-top: 5px; font-size: 20px; line-height: 1; font-weight: 720; letter-spacing: 0; }
+  .po-action-row { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
+  .po-manual-actions { display: flex; justify-content: flex-end; }
+  .po-section { margin-top: 15px; }
+  .po-section-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
+  .po-section-title { display: inline-flex; align-items: center; gap: 7px; min-width: 0; font-size: 13px; font-weight: 720; }
+  .po-section-meta { font-size: 11px; color: var(--text-subtle); }
+  .po-manual {
+    border: 1px solid var(--border); border-radius: 8px;
+    background: var(--surface); overflow: hidden;
+  }
+  .po-manual summary {
+    list-style: none; cursor: pointer;
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    padding: 10px 11px;
+  }
+  .po-manual summary::-webkit-details-marker { display: none; }
+  .po-manual-body { padding: 0 11px 11px; display: grid; gap: 8px; }
+  .po-field {
+    width: 100%; min-width: 0; border: 1px solid var(--border); border-radius: 8px;
+    background: var(--surface); color: var(--text);
+    padding: 8px 10px; font-size: 13px; line-height: 1.4;
+    transition: border-color .15s, box-shadow .15s, background .15s;
+  }
+  .po-field:focus {
+    outline: none; border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-soft-2);
+  }
+  .po-field::placeholder { color: var(--text-subtle); }
+  .po-select { min-height: 36px; padding-right: 30px; }
+  .po-textarea {
+    resize: vertical; min-height: 116px;
+    font-family: inherit;
+  }
+  .po-check {
+    display: flex; align-items: flex-start; gap: 8px;
+    font-size: 12px; line-height: 1.45; color: var(--text-muted);
+  }
+  .po-check input { margin-top: 2px; }
+  .po-scroll-list {
+    display: grid; gap: 8px; overflow-y: auto;
+    padding-right: 2px;
+  }
+  .po-scroll-list.compact { max-height: 184px; }
+  .po-scroll-list.samples { max-height: 238px; }
+  .po-workbench {
+    border: 1px solid var(--border); border-radius: 8px;
+    background: var(--surface);
+    padding: 13px;
+    box-shadow: var(--shadow-sm);
+  }
+  .po-workbench-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 9px; }
+  .po-workbench-title { display: inline-flex; align-items: center; gap: 7px; font-size: 14px; font-weight: 720; }
+  .po-prompt-input {
+    min-height: 190px; max-height: 320px;
+    background: var(--surface-2);
+    font-size: 14px; line-height: 1.65;
+  }
+  .po-toolbar {
+    display: flex; align-items: center; gap: 8px 10px; flex-wrap: wrap;
+    margin-top: 10px;
+  }
+  .po-toolbar .po-select { width: min(300px, 100%); background: var(--surface); }
+  .po-privacy {
+    margin-left: auto;
+    display: inline-flex; align-items: center; gap: 6px;
+    color: var(--text-subtle); font-size: 12px;
+  }
+  .po-note {
+    display: flex; gap: 8px; align-items: flex-start;
+    margin-top: 10px; padding: 9px 10px;
+    border: 1px solid var(--border); border-radius: 8px;
+    background: var(--accent-soft-2); color: var(--text-muted);
+    font-size: 12px; line-height: 1.45;
+  }
+  .po-variant-list { display: grid; gap: 10px; margin-top: 12px; }
+  .po-bottom-grid {
+    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px; margin-top: 16px;
+  }
+  .po-list-card, .po-rule-card, .po-variant-card {
+    border: 1px solid var(--border); border-radius: 8px;
+    background: var(--surface); color: var(--text);
+  }
+  .po-list-card { padding: 10px; }
+  .po-rule-card { padding: 10px; }
+  .po-variant-card { padding: 12px; }
+  .po-list-top, .po-rule-top, .po-variant-head {
+    display: flex; align-items: flex-start; justify-content: space-between; gap: 10px;
+  }
+  .po-list-title, .po-rule-text, .po-variant-name {
+    font-size: 13px; font-weight: 700; min-width: 0;
+  }
+  .po-list-meta, .po-rule-meta, .po-variant-desc {
+    margin-top: 3px; font-size: 11px; line-height: 1.35; color: var(--text-muted);
+  }
+  .po-list-body {
+    margin-top: 7px; font-size: 12px; line-height: 1.5;
+    color: var(--text-subtle);
+  }
+  .po-card-foot {
+    margin-top: 8px; display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    color: var(--text-subtle); font-size: 11px;
+  }
+  .po-pill {
+    display: inline-flex; align-items: center; gap: 4px;
+    max-width: 100%; border: 1px solid var(--border); border-radius: 999px;
+    padding: 3px 7px; background: var(--surface-2);
+    color: var(--text-muted); font-size: 11px; line-height: 1;
+  }
+  .po-pill.warn { color: #b91c1c; border-color: #fecaca; background: #fef2f2; }
+  .dark .po-pill.warn { color: #fca5a5; border-color: #7f1d1d; background: #450a0a; }
+  .po-pill.ok { color: var(--accent-hover); border-color: var(--accent-soft); background: var(--accent-soft-2); }
+  .po-muted { color: var(--text-muted); }
+  .po-subtle { color: var(--text-subtle); }
+  .po-line-2, .po-line-3 {
+    display: -webkit-box; -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .po-line-2 { -webkit-line-clamp: 2; }
+  .po-line-3 { -webkit-line-clamp: 3; }
+  .po-empty {
+    min-height: 116px; border: 1px dashed var(--border); border-radius: 8px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 7px; text-align: center; padding: 18px 12px;
+    color: var(--text-subtle); background: var(--surface-2);
+  }
+  .po-empty .po-icon {
+    width: 24px; height: 24px;
+    color: var(--text-muted);
+  }
+  .po-empty-title { font-size: 13px; font-weight: 700; color: var(--text-muted); }
+  .po-empty-desc { font-size: 12px; line-height: 1.45; max-width: 260px; }
+  .po-variant-tools { display: inline-flex; align-items: center; gap: 7px; flex-shrink: 0; }
+  .po-variant-textarea {
+    margin-top: 10px; width: 100%; min-height: 170px;
+    resize: vertical; border: 1px solid var(--border); border-radius: 8px;
+    background: var(--surface-2); color: var(--text);
+    padding: 10px 11px; font-size: 12px; line-height: 1.65;
+    font-family: inherit;
+  }
+  .po-rule-card.disabled { opacity: .58; }
+  .po-rule-source { display: flex; align-items: center; gap: 6px; margin-top: 7px; flex-wrap: wrap; }
+  @media (max-width: 960px) {
+    .po-modal { width: min(100vw - 24px, 760px); height: min(92vh, 920px); }
+    .po-shell { grid-template-columns: 1fr; }
+    .po-sidebar { border-right: 0; border-bottom: 1px solid var(--border); max-height: 42vh; }
+    .po-bottom-grid { grid-template-columns: 1fr; }
+    .po-privacy { margin-left: 0; width: 100%; }
+  }
+  @media (max-width: 560px) {
+    .modal-backdrop { padding: 10px; }
+    .po-modal { width: 100%; height: calc(100vh - 20px); max-height: calc(100vh - 20px); border-radius: 12px; }
+    .po-header { padding: 13px 14px; }
+    .po-sidebar, .po-main { padding: 12px; }
+    .po-stats { grid-template-columns: 1fr 1fr 1fr; }
+    .po-toolbar .po-select, .po-toolbar .po-btn { width: 100%; }
+    .po-action-row { align-items: stretch; }
+  }
+
   /* ===== Onboarding tour ===== */
   .tour-overlay {
     position: fixed; inset: 0; z-index: 60;
@@ -1344,6 +1589,9 @@
             <button type="button" id="webSearchBtn" class="composer-btn" title="联网搜索">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
             </button>
+            <button type="button" id="promptOptimizeBtn" class="composer-btn" title="优化 Prompt">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 4V2"/><path d="M15 16v-2"/><path d="M8 9H6"/><path d="M20 9h-2"/><path d="m17.8 6.2 1.4-1.4"/><path d="m10.8 13.2-1.4 1.4"/><path d="m10.8 4.8-1.4-1.4"/><path d="m17.8 11.8 1.4 1.4"/><path d="M12 9a3 3 0 1 0 6 0 3 3 0 0 0-6 0"/><path d="m3 21 9-9"/></svg>
+            </button>
             <div id="tokenCounter" class="text-[10px] ml-1" style="color:var(--text-subtle);">0 tokens</div>
           </div>
           <div class="flex items-center gap-1.5">
@@ -1519,6 +1767,160 @@
           class="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-700 rounded text-sm"></textarea>
         <button id="addPromptBtn" class="px-3 py-1.5 bg-orange-500 hover:bg-orange-600 text-white rounded text-sm">添加模板</button>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- Prompt Optimizer modal -->
+<div id="promptOptimizerModal" class="modal-backdrop hidden">
+  <div class="modal-box lg po-modal">
+    <div class="po-header">
+      <div class="po-title-wrap">
+        <div class="po-mark" aria-hidden="true">
+          <svg class="po-icon" viewBox="0 0 24 24"><path d="m12 3 1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5L12 3Z"/><path d="M19 14v4"/><path d="M21 16h-4"/><path d="M5 17v2"/><path d="M6 18H4"/></svg>
+        </div>
+        <div class="min-w-0">
+          <div class="po-title">Prompt 优化器</div>
+          <div id="promptOptimizerSummary" class="po-subtitle">本地黄金样本库 · 个人规则 · 三档改写</div>
+        </div>
+      </div>
+      <button data-close class="po-icon-btn" title="关闭" aria-label="关闭">
+        <svg class="po-icon" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+      </button>
+    </div>
+
+    <div class="po-shell">
+      <aside class="po-sidebar">
+        <div class="po-stats">
+          <div class="po-stat">
+            <div class="po-stat-top">
+              <span>样本</span>
+              <svg class="po-icon po-icon-sm" viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></svg>
+            </div>
+            <div id="poSampleCount" class="po-stat-value">0</div>
+          </div>
+          <div class="po-stat">
+            <div class="po-stat-top">
+              <span>规则</span>
+              <svg class="po-icon po-icon-sm" viewBox="0 0 24 24"><path d="M4 21v-7"/><path d="M4 10V3"/><path d="M12 21v-9"/><path d="M12 8V3"/><path d="M20 21v-5"/><path d="M20 12V3"/><path d="M2 14h4"/><path d="M10 8h4"/><path d="M18 16h4"/></svg>
+            </div>
+            <div id="poRuleCount" class="po-stat-value">0</div>
+          </div>
+          <div class="po-stat">
+            <div class="po-stat-top">
+              <span>改写</span>
+              <svg class="po-icon po-icon-sm" viewBox="0 0 24 24"><path d="M15 4V2"/><path d="M15 16v-2"/><path d="M8 9h2"/><path d="M20 9h2"/><path d="m17.8 6.2 1.4-1.4"/><path d="m10.8 13.2-1.4 1.4"/><path d="m10.8 4.8-1.4-1.4"/><path d="m17.8 11.8 1.4 1.4"/><path d="m14.5 9.5-9 9"/></svg>
+            </div>
+            <div id="poRewriteCount" class="po-stat-value">0</div>
+          </div>
+        </div>
+
+        <div class="po-action-row">
+          <button id="poAddCurrentSession" class="po-btn subtle po-grow" title="把当前会话加入黄金样本">
+            <svg class="po-icon" viewBox="0 0 24 24"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+            加入当前会话
+          </button>
+          <button id="poRefreshBtn" class="po-icon-btn" title="刷新样本和规则" aria-label="刷新样本和规则">
+            <svg class="po-icon" viewBox="0 0 24 24"><path d="M21 12a9 9 0 0 1-15.5 6.2"/><path d="M3 12A9 9 0 0 1 18.5 5.8"/><path d="M18 2v4h4"/><path d="M6 22v-4H2"/></svg>
+          </button>
+        </div>
+
+        <details open class="po-manual po-section">
+          <summary>
+            <span class="po-section-title">
+              <svg class="po-icon po-icon-sm" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+              手动样本
+            </span>
+            <svg class="po-icon po-icon-sm po-subtle" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>
+          </summary>
+          <div class="po-manual-body">
+            <input id="poSampleTitle" placeholder="样本标题（可选）" class="po-field" />
+            <select id="poSampleTask" class="po-field po-select"></select>
+            <textarea id="poSamplePrompt" rows="4" placeholder="好的原始 prompt" class="po-field po-textarea"></textarea>
+            <textarea id="poSampleResponse" rows="3" placeholder="回答摘要或为什么好（可选）" class="po-field po-textarea"></textarea>
+            <label class="po-check">
+              <input id="poSampleAllowCloud" type="checkbox" class="mt-0.5" />
+              允许后续显式确认时发送给 Claude 分析
+            </label>
+            <div class="po-manual-actions">
+              <button id="poAddManualSample" class="po-btn soft compact">
+                <svg class="po-icon" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z"/><path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/></svg>
+                保存
+              </button>
+            </div>
+          </div>
+        </details>
+
+        <div class="po-section">
+          <div class="po-section-head">
+            <div class="po-section-title">
+              <svg class="po-icon po-icon-sm" viewBox="0 0 24 24"><path d="M7 10v12"/><path d="M15 5.9 14 10h5.8a2 2 0 0 1 2 2.4l-1.4 7a2 2 0 0 1-2 1.6H5a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h2"/><path d="M7 10 11 2a3 3 0 0 1 4 3.9Z"/></svg>
+              好评候选
+            </div>
+            <span class="po-section-meta">本地</span>
+          </div>
+          <div id="poCandidateList" class="po-scroll-list compact"></div>
+        </div>
+
+        <div class="po-section">
+          <div class="po-section-head">
+            <div class="po-section-title">
+              <svg class="po-icon po-icon-sm" viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg>
+              黄金样本
+            </div>
+          </div>
+          <div id="poSampleList" class="po-scroll-list samples"></div>
+        </div>
+      </aside>
+
+      <section class="po-main">
+        <div class="po-workbench">
+          <div class="po-workbench-head">
+            <div class="po-workbench-title">
+              <svg class="po-icon" viewBox="0 0 24 24"><path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.4 2.6a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4Z"/></svg>
+              当前 Prompt
+            </div>
+          </div>
+          <textarea id="poCurrentPrompt" rows="7" placeholder="把想优化的 prompt 放这里，或直接从输入框带入" class="po-field po-textarea po-prompt-input"></textarea>
+          <div class="po-toolbar">
+            <select id="poRewriteTask" class="po-field po-select"></select>
+            <button id="poRewriteBtn" class="po-btn primary strong">
+              <svg class="po-icon" viewBox="0 0 24 24"><path d="M15 4V2"/><path d="M15 16v-2"/><path d="M8 9h2"/><path d="M20 9h2"/><path d="m17.8 6.2 1.4-1.4"/><path d="m10.8 13.2-1.4 1.4"/><path d="m14.5 9.5-9 9"/></svg>
+              生成
+            </button>
+            <button id="poUseInputBtn" class="po-icon-btn" title="使用输入框内容" aria-label="使用输入框内容">
+              <svg class="po-icon" viewBox="0 0 24 24"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v6h6"/><path d="M10 13h4"/><path d="M10 17h4"/></svg>
+            </button>
+            <span class="po-privacy">
+              <svg class="po-icon po-icon-sm" viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-7.7 8.9a1 1 0 0 1-.6 0C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.2-2.7a1.2 1.2 0 0 1 1.6 0C14.5 3.8 17 5 19 5a1 1 0 0 1 1 1Z"/></svg>
+              <span id="poPrivacyHint">默认仅本地处理</span>
+            </span>
+          </div>
+          <div id="poRewriteExplanation" class="po-note hidden"></div>
+        </div>
+        <div id="poVariantList" class="po-variant-list"></div>
+
+        <div class="po-bottom-grid">
+          <div>
+            <div class="po-section-head">
+              <div class="po-section-title">
+                <svg class="po-icon po-icon-sm" viewBox="0 0 24 24"><path d="M4 21v-7"/><path d="M4 10V3"/><path d="M12 21v-9"/><path d="M12 8V3"/><path d="M20 21v-5"/><path d="M20 12V3"/><path d="M2 14h4"/><path d="M10 8h4"/><path d="M18 16h4"/></svg>
+                个人规则
+              </div>
+            </div>
+            <div id="poRuleList" class="po-scroll-list"></div>
+          </div>
+          <div>
+            <div class="po-section-head">
+              <div class="po-section-title">
+                <svg class="po-icon po-icon-sm" viewBox="0 0 24 24"><path d="m12 3 1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5L12 3Z"/><path d="M19 14v4"/><path d="M21 16h-4"/></svg>
+                相似样本
+              </div>
+            </div>
+            <div id="poSimilarList" class="po-scroll-list"></div>
+          </div>
+        </div>
+      </section>
     </div>
   </div>
 </div>
@@ -1764,6 +2166,9 @@
         <div>• 粘贴图片直接发送（支持截图）</div>
         <div>• 粘贴 URL 自动抓取网页正文作为上下文</div>
         <div>• 拖拽文档（PDF / DOCX / XLSX 等）上传并提取文本</div>
+        <div>• 点击输入框工具栏的魔法棒，基于黄金样本和个人规则优化当前 Prompt</div>
+        <div>• Chrome 插件支持网页选中即问，结果可在 Side Panel 流式查看并转入 Web 会话</div>
+        <div>• 给回答点 👍 或收藏后，可作为 Prompt 优化器的黄金样本候选</div>
         <div>• 工具调用失败时可一键放行权限重试</div>
         <div>• Git 仓库自动 checkpoint，可一键回滚到对话前</div>
         <div>• 双击会话标题重命名，或点 🪄 让 AI 命名</div>
@@ -1920,6 +2325,15 @@ const memoriesEditor = $('memoriesEditor'), newMemoryContent = $('newMemoryConte
 const promptsModal = $('promptsModal'), managePromptsBtn = $('managePrompts');
 const promptList = $('promptList'), promptsEditor = $('promptsEditor');
 const addPromptBtn = $('addPromptBtn'), newPromptName = $('newPromptName'), newPromptSlash = $('newPromptSlash'), newPromptContent = $('newPromptContent');
+const promptOptimizeBtn = $('promptOptimizeBtn');
+const promptOptimizerModal = $('promptOptimizerModal');
+const poSummary = $('promptOptimizerSummary');
+const poSampleCount = $('poSampleCount'), poRuleCount = $('poRuleCount'), poRewriteCount = $('poRewriteCount');
+const poAddCurrentSession = $('poAddCurrentSession'), poRefreshBtn = $('poRefreshBtn');
+const poSampleTitle = $('poSampleTitle'), poSampleTask = $('poSampleTask'), poSamplePrompt = $('poSamplePrompt'), poSampleResponse = $('poSampleResponse'), poSampleAllowCloud = $('poSampleAllowCloud'), poAddManualSample = $('poAddManualSample');
+const poCandidateList = $('poCandidateList'), poSampleList = $('poSampleList');
+const poCurrentPrompt = $('poCurrentPrompt'), poRewriteTask = $('poRewriteTask'), poRewriteBtn = $('poRewriteBtn'), poUseInputBtn = $('poUseInputBtn'), poPrivacyHint = $('poPrivacyHint');
+const poRewriteExplanation = $('poRewriteExplanation'), poVariantList = $('poVariantList'), poRuleList = $('poRuleList'), poSimilarList = $('poSimilarList');
 const statsBar = $('statsBar'), statsModal = $('statsModal');
 const memoryBar = $('memoryBar');
 const tokenBar = $('tokenBar');
@@ -6262,6 +6676,346 @@ addPromptBtn.addEventListener('click', async () => {
   newPromptName.value = ''; newPromptSlash.value = ''; newPromptContent.value = '';
   refreshPrompts();
 });
+
+// ===== prompt optimizer =====
+let promptOptimizerState = {
+  taskTypes: [],
+  samples: [],
+  rules: [],
+  candidates: [],
+  lastRewrite: null,
+};
+
+const PO_ICON_PATHS = {
+  check: '<path d="M20 6 9 17l-5-5"/>',
+  copy: '<rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
+  database: '<ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/>',
+  fileText: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v6h6"/><path d="M10 13h4"/><path d="M10 17h4"/>',
+  info: '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>',
+  loader: '<path d="M21 12a9 9 0 0 1-9 9"/><path d="M3 12a9 9 0 0 1 9-9"/>',
+  plus: '<path d="M12 5v14"/><path d="M5 12h14"/>',
+  power: '<path d="M12 2v10"/><path d="M18.4 6.6a9 9 0 1 1-12.8 0"/>',
+  refresh: '<path d="M21 12a9 9 0 0 1-15.5 6.2"/><path d="M3 12A9 9 0 0 1 18.5 5.8"/><path d="M18 2v4h4"/><path d="M6 22v-4H2"/>',
+  save: '<path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z"/><path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/>',
+  shield: '<path d="M20 13c0 5-3.5 7.5-7.7 8.9a1 1 0 0 1-.6 0C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.2-2.7a1.2 1.2 0 0 1 1.6 0C14.5 3.8 17 5 19 5a1 1 0 0 1 1 1Z"/>',
+  sliders: '<path d="M4 21v-7"/><path d="M4 10V3"/><path d="M12 21v-9"/><path d="M12 8V3"/><path d="M20 21v-5"/><path d="M20 12V3"/><path d="M2 14h4"/><path d="M10 8h4"/><path d="M18 16h4"/>',
+  sparkles: '<path d="m12 3 1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5L12 3Z"/><path d="M19 14v4"/><path d="M21 16h-4"/><path d="M5 17v2"/><path d="M6 18H4"/>',
+  star: '<path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-3-5.6 3 1.1-6.2L3 9.6l6.2-.9Z"/>',
+  thumbsUp: '<path d="M7 10v12"/><path d="M15 5.9 14 10h5.8a2 2 0 0 1 2 2.4l-1.4 7a2 2 0 0 1-2 1.6H5a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h2"/><path d="M7 10 11 2a3 3 0 0 1 4 3.9Z"/>',
+  trash: '<path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/>',
+  wand: '<path d="M15 4V2"/><path d="M15 16v-2"/><path d="M8 9h2"/><path d="M20 9h2"/><path d="m17.8 6.2 1.4-1.4"/><path d="m10.8 13.2-1.4 1.4"/><path d="m14.5 9.5-9 9"/>',
+};
+
+function poIcon(name, className = 'po-icon') {
+  return `<svg class="${className}" viewBox="0 0 24 24" aria-hidden="true">${PO_ICON_PATHS[name] || ''}</svg>`;
+}
+
+function poEmpty(icon, title, desc = '') {
+  return `<div class="po-empty">${poIcon(icon)}<div class="po-empty-title">${escapeHtml(title)}</div>${desc ? `<div class="po-empty-desc">${escapeHtml(desc)}</div>` : ''}</div>`;
+}
+
+function poSetRewriteLoading(isLoading) {
+  if (!poRewriteBtn) return;
+  poRewriteBtn.disabled = isLoading;
+  poRewriteBtn.innerHTML = isLoading
+    ? `${poIcon('loader', 'po-icon po-spin')}生成中`
+    : `${poIcon('wand')}生成`;
+}
+
+function poTaskLabel(taskType) {
+  return (promptOptimizerState.taskTypes.find(t => t.id === taskType) || {}).label || taskType || '其他';
+}
+
+function poFillTaskSelects() {
+  if (!promptOptimizerState.taskTypes.length) return;
+  const sampleValue = poSampleTask.value;
+  const rewriteValue = poRewriteTask.value;
+  poSampleTask.innerHTML = '<option value="">自动识别任务类型</option>' + promptOptimizerState.taskTypes.map(t => `<option value="${escapeHtml(t.id)}">${escapeHtml(t.label)}</option>`).join('');
+  poRewriteTask.innerHTML = '<option value="">自动识别任务类型</option>' + promptOptimizerState.taskTypes.map(t => `<option value="${escapeHtml(t.id)}">${escapeHtml(t.label)}</option>`).join('');
+  if (sampleValue) poSampleTask.value = sampleValue;
+  if (rewriteValue) poRewriteTask.value = rewriteValue;
+}
+
+function poRenderSamples() {
+  if (!poSampleList) return;
+  const samples = promptOptimizerState.samples || [];
+  poSampleList.innerHTML = samples.length ? samples.map(sample => {
+    const privacy = sample.privacy?.has_sensitive
+      ? `<span class="po-pill warn">${poIcon('shield', 'po-icon po-icon-sm')}敏感预警</span>`
+      : `<span class="po-pill">${poIcon('shield', 'po-icon po-icon-sm')}本地样本</span>`;
+    return `<div class="po-list-card">
+      <div class="po-list-top">
+        <div class="min-w-0">
+          <div class="po-list-title truncate">${escapeHtml(sample.title || '未命名样本')}</div>
+          <div class="po-list-meta">${escapeHtml(sample.task_label || poTaskLabel(sample.task_type))} · ${escapeHtml(sample.source_type || 'manual')}</div>
+        </div>
+        <button data-po-sample-delete="${escapeHtml(sample.id)}" class="po-icon-btn danger" title="删除样本" aria-label="删除样本">${poIcon('trash')}</button>
+      </div>
+      <div class="po-list-body po-line-2">${escapeHtml(sample.prompt || '')}</div>
+      <div class="po-card-foot">${privacy}<span>${formatTime(sample.updated_at)}</span></div>
+    </div>`;
+  }).join('') : poEmpty('database', '还没有黄金样本', '先加入当前会话或手动保存一个样本');
+
+  poSampleList.querySelectorAll('[data-po-sample-delete]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      if (!confirm('删除这个黄金样本？')) return;
+      const r = await fetch('/api/prompt-optimizer/samples/' + encodeURIComponent(btn.dataset.poSampleDelete), { method: 'DELETE' });
+      if (!r.ok) { toast('删除失败'); return; }
+      toast('样本已删除');
+      refreshPromptOptimizer();
+    });
+  });
+}
+
+function poRenderCandidates() {
+  if (!poCandidateList) return;
+  const candidates = promptOptimizerState.candidates || [];
+  poCandidateList.innerHTML = candidates.length ? candidates.map(item => `
+    <div class="po-list-card">
+      <div class="po-list-top">
+        <div class="min-w-0">
+          <div class="po-list-title truncate">${escapeHtml(item.title || item.session_id)}</div>
+          <div class="po-list-meta">${poIcon('thumbsUp', 'po-icon po-icon-sm')} ${item.up_count || 0} · ${poIcon('star', 'po-icon po-icon-sm')} ${item.starred_count || 0}</div>
+        </div>
+        <button data-po-candidate="${escapeHtml(item.session_id)}" ${item.already_sampled ? 'disabled' : ''} class="po-icon-btn" title="${item.already_sampled ? '已加入' : '加入黄金样本'}" aria-label="${item.already_sampled ? '已加入' : '加入黄金样本'}">${poIcon(item.already_sampled ? 'check' : 'plus')}</button>
+      </div>
+    </div>
+  `).join('') : poEmpty('thumbsUp', '还没有候选', '点赞或收藏后的会话会出现在这里');
+
+  poCandidateList.querySelectorAll('[data-po-candidate]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      await poAddSessionSample(btn.dataset.poCandidate);
+    });
+  });
+}
+
+function poRenderRules(rules = promptOptimizerState.rules || []) {
+  if (!poRuleList) return;
+  if (!rules.length) {
+    poRuleList.innerHTML = poEmpty('sliders', '暂无个人规则', '样本足够后会自动沉淀');
+    return;
+  }
+  poRuleList.innerHTML = rules.map(rule => {
+    const isDefault = String(rule.id || '').startsWith('default-');
+    const confidence = Math.round((rule.confidence || 0) * 100);
+    return `<div class="po-rule-card ${rule.enabled ? '' : 'disabled'}">
+      <div class="po-rule-top">
+        <div class="min-w-0">
+          <div class="po-rule-text">${escapeHtml(rule.rule)}</div>
+          <div class="po-rule-meta">${escapeHtml(rule.task_label || poTaskLabel(rule.task_type))} · ${rule.sample_count || 0} 样本 · ${confidence}%</div>
+        </div>
+        ${isDefault ? `<span class="po-pill">${poIcon('shield', 'po-icon po-icon-sm')}默认</span>` : `<button data-po-rule-toggle="${escapeHtml(rule.id)}" data-enabled="${rule.enabled ? 'true' : 'false'}" class="po-icon-btn" title="${rule.enabled ? '关闭规则' : '启用规则'}" aria-label="${rule.enabled ? '关闭规则' : '启用规则'}">${poIcon('power')}</button>`}
+      </div>
+    </div>`;
+  }).join('');
+
+  poRuleList.querySelectorAll('[data-po-rule-toggle]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const enabled = btn.dataset.enabled !== 'true';
+      const r = await fetch('/api/prompt-optimizer/rules/' + encodeURIComponent(btn.dataset.poRuleToggle), {
+        method: 'PATCH',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ enabled }),
+      });
+      if (!r.ok) { toast('规则更新失败'); return; }
+      toast(enabled ? '规则已启用' : '规则已关闭');
+      refreshPromptOptimizer();
+    });
+  });
+}
+
+function poRenderSimilar(samples = []) {
+  if (!poSimilarList) return;
+  poSimilarList.innerHTML = samples.length ? samples.map(sample => `
+    <div class="po-list-card">
+      <div class="po-list-top">
+        <div class="po-list-title truncate">${escapeHtml(sample.title || '相似样本')}</div>
+        <span class="po-pill ok">${Math.round((sample.similarity || 0) * 100)}%</span>
+      </div>
+      <div class="po-list-body po-line-3">${escapeHtml(sample.prompt_excerpt || '')}</div>
+    </div>
+  `).join('') : poEmpty('sparkles', '还没有相似样本', '生成改写后会显示匹配结果');
+}
+
+function poRenderVariantEmpty() {
+  if (!poVariantList) return;
+  poVariantList.innerHTML = poEmpty('wand', '等待生成三档改写', '输入 Prompt 后选择任务类型，点击生成');
+}
+
+function poRenderDashboard(data) {
+  promptOptimizerState = {
+    ...promptOptimizerState,
+    taskTypes: data.task_types || promptOptimizerState.taskTypes || [],
+    samples: data.samples || [],
+    rules: data.rules || [],
+    candidates: data.candidates || [],
+  };
+  poFillTaskSelects();
+  const stats = data.stats || {};
+  poSampleCount.textContent = stats.enabled_samples ?? stats.sample_count ?? 0;
+  poRuleCount.textContent = stats.rule_count || 0;
+  poRewriteCount.textContent = stats.rewrite_count || 0;
+  const tasks = (stats.tasks || []).slice(0, 3).map(t => `${t.task_label} ${t.count}`).join(' · ');
+  poSummary.textContent = tasks ? `本地黄金样本库 · ${tasks}` : '本地黄金样本库 · 个人规则 · 三档改写';
+  poRenderSamples();
+  poRenderCandidates();
+  poRenderRules();
+  if (!promptOptimizerState.lastRewrite) poRenderSimilar();
+}
+
+async function refreshPromptOptimizer() {
+  try {
+    const r = await fetch('/api/prompt-optimizer');
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.detail || r.status);
+    poRenderDashboard(data);
+  } catch (e) {
+    toast('加载优化器失败：' + (e.message || e), { timeout: 4000 });
+  }
+}
+
+async function poAddSessionSample(targetSessionId) {
+  if (!targetSessionId) { toast('当前没有可加入的会话'); return; }
+  const r = await fetch('/api/prompt-optimizer/samples/from-session', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ session_id: targetSessionId, allow_cloud_analysis: false }),
+  });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) { toast('加入失败：' + (data.detail || r.status), { timeout: 4000 }); return; }
+  toast('已加入黄金样本');
+  refreshPromptOptimizer();
+}
+
+async function poCreateManualSample() {
+  const prompt = poSamplePrompt.value.trim();
+  if (!prompt) { toast('请先填写好的 prompt'); return; }
+  const r = await fetch('/api/prompt-optimizer/samples', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({
+      title: poSampleTitle.value.trim(),
+      prompt,
+      response_summary: poSampleResponse.value.trim(),
+      task_type: poSampleTask.value || '',
+      source_type: 'manual',
+      allow_cloud_analysis: poSampleAllowCloud.checked,
+    }),
+  });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) { toast('保存失败：' + (data.detail || r.status), { timeout: 4000 }); return; }
+  poSampleTitle.value = '';
+  poSamplePrompt.value = '';
+  poSampleResponse.value = '';
+  poSampleAllowCloud.checked = false;
+  toast('样本已保存');
+  refreshPromptOptimizer();
+}
+
+function poRenderRewrite(data) {
+  promptOptimizerState.lastRewrite = data;
+  poRewriteExplanation.classList.remove('hidden');
+  poRewriteExplanation.innerHTML = `${poIcon('info', 'po-icon po-icon-sm')}${escapeHtml(data.explanation || '')}`;
+  const findings = data.privacy?.findings || [];
+  poPrivacyHint.textContent = findings.length
+    ? `发现 ${findings.map(f => `${f.type}×${f.count}`).join('、')} · 未上传`
+    : '未发现明显敏感片段 · 仅本地处理';
+  const variants = data.variants || [];
+  poVariantList.innerHTML = variants.length ? variants.map(variant => `
+    <div class="po-variant-card">
+      <div class="po-variant-head">
+        <div class="min-w-0">
+          <div class="po-variant-name">${escapeHtml(variant.name)}</div>
+          <div class="po-variant-desc">${escapeHtml(variant.description || '')}</div>
+        </div>
+        <div class="po-variant-tools">
+          <button data-po-copy-variant="${escapeHtml(variant.id)}" class="po-icon-btn" title="复制" aria-label="复制">${poIcon('copy')}</button>
+          <button data-po-adopt-variant="${escapeHtml(variant.id)}" class="po-btn primary">${poIcon('check')}采用</button>
+        </div>
+      </div>
+      <textarea readonly rows="8" class="po-variant-textarea">${escapeHtml(variant.prompt || '')}</textarea>
+    </div>
+  `).join('') : poEmpty('wand', '没有生成可用改写', '可以调整当前 Prompt 后重试');
+  poRenderRules(data.used_rules || []);
+  poRenderSimilar(data.similar_samples || []);
+
+  poVariantList.querySelectorAll('[data-po-copy-variant]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const variant = (promptOptimizerState.lastRewrite?.variants || []).find(v => v.id === btn.dataset.poCopyVariant);
+      if (!variant) return;
+      await navigator.clipboard.writeText(variant.prompt || '');
+      toast('优化版 Prompt 已复制');
+      poSaveRewriteFeedback(variant.id, 'copied').catch(() => {});
+    });
+  });
+  poVariantList.querySelectorAll('[data-po-adopt-variant]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const variant = (promptOptimizerState.lastRewrite?.variants || []).find(v => v.id === btn.dataset.poAdoptVariant);
+      if (!variant) return;
+      input.value = variant.prompt || '';
+      updateTokenCount();
+      autosizeTextarea();
+      saveDraft();
+      closeModal(promptOptimizerModal);
+      input.focus();
+      toast(`已采用：${variant.name}`);
+      poSaveRewriteFeedback(variant.id, 'adopted').catch(() => {});
+    });
+  });
+}
+
+async function poSaveRewriteFeedback(variantId, action) {
+  if (!promptOptimizerState.lastRewrite?.id) return;
+  await fetch('/api/prompt-optimizer/feedback', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ rewrite_id: promptOptimizerState.lastRewrite.id, variant_id: variantId, action }),
+  });
+}
+
+async function poRewriteCurrentPrompt() {
+  const prompt = poCurrentPrompt.value.trim();
+  if (!prompt) { toast('请先输入要优化的 prompt'); return; }
+  poSetRewriteLoading(true);
+  try {
+    const r = await fetch('/api/prompt-optimizer/rewrite', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ prompt, task_type: poRewriteTask.value || '' }),
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.detail || r.status);
+    poRenderRewrite(data);
+    refreshPromptOptimizer();
+  } catch (e) {
+    toast('改写失败：' + (e.message || e), { timeout: 4000 });
+  } finally {
+    poSetRewriteLoading(false);
+  }
+}
+
+function openPromptOptimizer() {
+  poCurrentPrompt.value = input.value.trim();
+  poRewriteExplanation.classList.add('hidden');
+  poRewriteExplanation.innerHTML = '';
+  poRenderVariantEmpty();
+  poPrivacyHint.textContent = '默认仅本地处理';
+  promptOptimizerState.lastRewrite = null;
+  poRenderSimilar();
+  openModal(promptOptimizerModal);
+  refreshPromptOptimizer();
+  setTimeout(() => poCurrentPrompt.focus(), 30);
+}
+
+if (promptOptimizeBtn) promptOptimizeBtn.addEventListener('click', openPromptOptimizer);
+if (poRefreshBtn) poRefreshBtn.addEventListener('click', refreshPromptOptimizer);
+if (poUseInputBtn) poUseInputBtn.addEventListener('click', () => {
+  poCurrentPrompt.value = input.value.trim();
+  poCurrentPrompt.focus();
+});
+if (poRewriteBtn) poRewriteBtn.addEventListener('click', poRewriteCurrentPrompt);
+if (poAddManualSample) poAddManualSample.addEventListener('click', poCreateManualSample);
+if (poAddCurrentSession) poAddCurrentSession.addEventListener('click', () => poAddSessionSample(sessionId));
 
 // ===== keyboard shortcuts =====
 document.addEventListener('keydown', (e) => {

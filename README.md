@@ -23,8 +23,9 @@ pip install claude-web-ui && claude-web
 ### Token 级流式输出 & 工具调用可视化
 ![流式 + 工具](screenshots/stream.png)
 
-### Edit 工具并排 Diff
-![Edit Diff](screenshots/diff.png)
+### Chrome MV3「选中即问」插件
+网页选中文本或代码后右键让 Claude 解释、审查、改写或生成测试，结果在 Chrome Side Panel 流式展示。
+![Chrome 选中即问插件](screenshots/diff.png)
 
 ### 使用统计面板
 ![统计](screenshots/stats.png)
@@ -56,6 +57,8 @@ pip install claude-web-ui && claude-web
 - **重操作命令**：`/compact` 用 Haiku 压缩旧历史并备份 JSONL，`/init` 扫描项目生成 `CLAUDE.md` 草稿到输入框
 - **内置模板命令**：`/recap` `/test` `/explain` `/review` `/refactor` `/commit` `/docs`
 - **自定义 Slash 模板**：提示词模板可设置 `slash_trigger`，显示在「我的模板」分组
+- **Prompt 优化器**：基于本地黄金样本库、好评 / 收藏候选和个人任务规则，生成轻度优化 / 专家模式 / 探索模式三档改写
+- **本地优先的 Prompt 规则沉淀**：按代码审查、Debug、产品方案、写作等任务类型自动分类，沉淀个人偏好规则，并在改写时解释用了哪些规则和相似样本
 - Token 估算 + 草稿自动保存
 - 提示词模板库（支持普通插入和 Slash 触发）
 
@@ -71,6 +74,7 @@ pip install claude-web-ui && claude-web
 
 ### 🗂 会话管理
 - 📌 置顶 / 📥 归档 / 🏷 标签
+- **CLI 会话 Tab**：侧栏可直接切到「CLI」查看 `~/.claude/projects/` 历史，会话标题优先显示真实用户消息，跳过 hook 注入噪音
 - 🪄 AI 智能命名（让 Claude 给会话起标题）
 - 双击标题重命名
 - 搜索（标题 + 内容）
@@ -317,6 +321,12 @@ claude-web/
 | `/api/extension/stop/{session_id}` | POST | 停止插件侧正在运行的会话 |
 | `/api/extension/drafts` | POST | 创建插件草稿并返回 Claude Web 打开链接 |
 | `/api/extension/drafts/{id}` | GET | Claude Web 读取插件草稿并自动填入 / 发送 |
+| `/api/prompt-optimizer` | GET | Prompt 优化器仪表盘：样本、规则、好评 / 收藏候选 |
+| `/api/prompt-optimizer/samples` | POST/DELETE | 手动维护黄金样本 |
+| `/api/prompt-optimizer/samples/from-session` | POST | 从当前会话或候选会话加入黄金样本 |
+| `/api/prompt-optimizer/rules/{id}` | PATCH | 启用 / 关闭个人 Prompt 规则 |
+| `/api/prompt-optimizer/rewrite` | POST | 生成轻度 / 专家 / 探索三档 Prompt 改写 |
+| `/api/prompt-optimizer/feedback` | POST | 记录复制 / 采用改写结果的反馈 |
 | `/api/upload` | POST | 上传图片 |
 | `/api/upload-doc` | POST | 上传文档（PDF / DOCX / XLSX / XLS / CSV / TSV / TXT / MD / JSON / LOG），自动提取文本 |
 | `/api/exec-code` | POST | 运行代码块（Python/JS/Bash，15s 超时） |
@@ -374,6 +384,8 @@ claude-web/
 - [x] 文档上传（PDF / DOCX / XLSX / XLS / CSV / TSV / TXT / MD / JSON / LOG）和 URL 自动抓取上下文
 - [x] 联网搜索开关、`@` 文件 / 会话 / 提示词 / 记忆引用、Token 估算、草稿自动保存、提示词模板库
 - [x] Slash 命令菜单（`/new` `/clear` `/fork` `/compact` `/init` + 内置 / 自定义模板）
+- [x] Prompt 优化器（本地黄金样本库、按任务类型沉淀个人规则、相似成功样本、三档改写、一键采用）
+- [x] Chrome 选中即问插件（右键解释 / 审查 / 改写 / 生成测试，Side Panel 流式回答，可转入完整 Web 会话）
 - [x] Mermaid / LaTeX 渲染、图片 Lightbox、代码块复制与本地运行
 - [x] 会话置顶 / 归档 / 标签 / 搜索 / 导出 / 双击重命名 / AI 智能命名
 - [x] 历史消息就地编辑继续、重新生成分叉、Git checkpoint 回滚

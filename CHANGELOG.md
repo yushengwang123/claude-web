@@ -2,6 +2,16 @@
 
 所有重要变更按版本记录。应用内的 What's New 和帮助面板使用 `static/changelog.json`，这里是给 GitHub / Git diff 浏览的 Markdown 版本。
 
+## v1.6.0 - 2026-06-16
+
+- **FEATURE** 新增 Prompt 优化器：输入框工具栏可打开优化工作台，基于本地黄金样本库生成轻度优化 / 专家模式 / 探索模式三档 Prompt 改写，并可一键采用回填到输入框
+- **FEATURE** Prompt 优化器支持从当前会话、手动粘贴、好评 / 收藏候选加入黄金样本；按任务类型自动分类，沉淀个人 Prompt 规则，展示规则置信度、来源样本数、相似成功样本和本地隐私提示
+- **FEATURE** 新增 Chrome MV3「选中即问」插件：网页选中文本或代码后右键让 Claude 解释、审查、改写或生成测试，结果在 Chrome Side Panel 流式展示
+- **FEATURE** 插件可一键转入完整 Claude Web 会话；Web 设置页支持生成插件 Token、显示插件目录、下载 ZIP，命令行新增 `claude-web --extension-path` / `claude-web-extension-path`
+- **FEATURE** 侧栏新增「CLI」Tab，与活跃 / 归档并列展示 Claude Code CLI 历史；导入列表标题优先使用真实用户消息，跳过 hook 注入内容
+- **FEATURE** 回答反馈升级为好评 / 差评 / 收藏 / 原因 / 备注，并在统计面板展示反馈汇总；Prompt 优化器会复用好评和收藏作为黄金样本候选
+- **FIX** 修复 CLI 会话视图按钮初始化顺序导致列表加载中断的问题
+
 ## v1.5.5 - 2026-06-05
 
 - **FEATURE** 活跃会话保温（Warm Process Pool）：每个会话保留一个持久 `claude` 进程，后续每轮跳过进程启动和 MCP 握手开销；无 MCP 省 1-2s，重度 MCP 用户（3-5 个 server）省 5-15s/轮；空闲 90s 自动回收，内存稳定在单进程量级（约 344MB）

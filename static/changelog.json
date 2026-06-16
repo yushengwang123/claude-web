@@ -2,6 +2,19 @@
   "$schema": "https://json.schemastore.org/changelog.json",
   "releases": [
     {
+      "version": "1.6.0",
+      "date": "2026-06-16",
+      "highlights": [
+        { "type": "feature", "text": "新增 Prompt 优化器：输入框工具栏可打开优化工作台，基于本地黄金样本库生成轻度优化 / 专家模式 / 探索模式三档 Prompt 改写，并可一键采用回填到输入框" },
+        { "type": "feature", "text": "Prompt 优化器支持从当前会话、手动粘贴、好评 / 收藏候选加入黄金样本；按任务类型自动分类，沉淀个人 Prompt 规则，展示规则置信度、来源样本数、相似成功样本和本地隐私提示" },
+        { "type": "feature", "text": "新增 Chrome MV3「选中即问」插件：网页选中文本或代码后右键让 Claude 解释、审查、改写或生成测试，结果在 Chrome Side Panel 流式展示" },
+        { "type": "feature", "text": "插件可一键转入完整 Claude Web 会话；Web 设置页支持生成插件 Token、显示插件目录、下载 ZIP，命令行新增 claude-web --extension-path / claude-web-extension-path" },
+        { "type": "feature", "text": "侧栏新增「CLI」Tab，与活跃 / 归档并列展示 Claude Code CLI 历史；导入列表标题优先使用真实用户消息，跳过 hook 注入内容" },
+        { "type": "feature", "text": "回答反馈升级为好评 / 差评 / 收藏 / 原因 / 备注，并在统计面板展示反馈汇总；Prompt 优化器会复用好评和收藏作为黄金样本候选" },
+        { "type": "fix", "text": "修复 CLI 会话视图按钮初始化顺序导致列表加载中断的问题" }
+      ]
+    },
+    {
       "version": "1.5.5",
       "date": "2026-06-05",
       "highlights": [

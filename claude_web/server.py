@@ -23,7 +23,7 @@ from collections import defaultdict
 from contextlib import asynccontextmanager, contextmanager
 from html.parser import HTMLParser
 from pathlib import Path
-from typing import Dict, Iterator, List, Optional, Set
+from typing import Dict, Iterator, List, Optional, Set, Tuple
 from urllib.parse import urljoin, urlparse
 
 from fastapi import FastAPI, File, Header, HTTPException, Query, Request, UploadFile
@@ -535,6 +535,66 @@ def init_db() -> None:
             )
             """
         )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS prompt_optimizer_samples (
+                id TEXT PRIMARY KEY,
+                title TEXT NOT NULL DEFAULT '',
+                prompt TEXT NOT NULL,
+                response_summary TEXT NOT NULL DEFAULT '',
+                task_type TEXT NOT NULL DEFAULT 'other',
+                source_type TEXT NOT NULL DEFAULT 'manual',
+                source_session_id TEXT NOT NULL DEFAULT '',
+                allow_cloud_analysis INTEGER NOT NULL DEFAULT 0,
+                enabled INTEGER NOT NULL DEFAULT 1,
+                note TEXT NOT NULL DEFAULT '',
+                created_at REAL NOT NULL,
+                updated_at REAL NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS prompt_optimizer_rules (
+                id TEXT PRIMARY KEY,
+                task_type TEXT NOT NULL,
+                rule TEXT NOT NULL,
+                sample_count INTEGER NOT NULL DEFAULT 0,
+                confidence REAL NOT NULL DEFAULT 0,
+                enabled INTEGER NOT NULL DEFAULT 1,
+                created_at REAL NOT NULL,
+                updated_at REAL NOT NULL,
+                UNIQUE(task_type, rule)
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS prompt_optimizer_rewrites (
+                id TEXT PRIMARY KEY,
+                original_prompt TEXT NOT NULL,
+                task_type TEXT NOT NULL DEFAULT 'other',
+                variants_json TEXT NOT NULL,
+                used_rules_json TEXT NOT NULL,
+                similar_samples_json TEXT NOT NULL,
+                privacy_json TEXT NOT NULL,
+                created_at REAL NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS prompt_optimizer_feedback (
+                id TEXT PRIMARY KEY,
+                rewrite_id TEXT NOT NULL,
+                variant_id TEXT NOT NULL DEFAULT '',
+                action TEXT NOT NULL DEFAULT '',
+                rating TEXT NOT NULL DEFAULT '',
+                note TEXT NOT NULL DEFAULT '',
+                created_at REAL NOT NULL
+            )
+            """
+        )
         conn.execute("CREATE INDEX IF NOT EXISTS idx_session_usage_session ON session_usage(session_id, turn_idx)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_session_usage_ts ON session_usage(ts)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_tool_calls_session ON tool_calls(session_id)")
@@ -545,6 +605,10 @@ def init_db() -> None:
         conn.execute("CREATE INDEX IF NOT EXISTS idx_message_feedback_rating ON message_feedback(rating)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_message_feedback_starred ON message_feedback(starred)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_extension_drafts_expires ON extension_drafts(expires_at)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_prompt_optimizer_samples_task ON prompt_optimizer_samples(task_type, enabled)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_prompt_optimizer_samples_updated ON prompt_optimizer_samples(updated_at)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_prompt_optimizer_rules_task ON prompt_optimizer_rules(task_type, enabled)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_prompt_optimizer_feedback_rewrite ON prompt_optimizer_feedback(rewrite_id)")
 
 
 init_db()
@@ -992,6 +1056,41 @@ class MessageFeedbackRequest(BaseModel):
     message_excerpt: Optional[str] = None
 
 
+class PromptOptimizerSampleRequest(BaseModel):
+    title: Optional[str] = None
+    prompt: str
+    response_summary: Optional[str] = ""
+    task_type: Optional[str] = ""
+    source_type: Optional[str] = "manual"
+    source_session_id: Optional[str] = ""
+    allow_cloud_analysis: Optional[bool] = False
+    enabled: Optional[bool] = True
+    note: Optional[str] = ""
+
+
+class PromptOptimizerSessionSampleRequest(BaseModel):
+    session_id: str
+    allow_cloud_analysis: Optional[bool] = False
+    note: Optional[str] = ""
+
+
+class PromptOptimizerRewriteRequest(BaseModel):
+    prompt: str
+    task_type: Optional[str] = ""
+
+
+class PromptOptimizerRulePatch(BaseModel):
+    enabled: Optional[bool] = None
+
+
+class PromptOptimizerFeedbackRequest(BaseModel):
+    rewrite_id: str
+    variant_id: Optional[str] = ""
+    action: Optional[str] = "adopted"
+    rating: Optional[str] = ""
+    note: Optional[str] = ""
+
+
 class ExtensionAskRequest(BaseModel):
     action: str = "explain"
     selected_text: str
@@ -1286,6 +1385,485 @@ def derive_title(message: str) -> str:
         return first_in_fence[:60]
     fallback = message.strip().replace("\n", " ")
     return fallback[:60] if fallback else "未命名会话"
+
+
+_PROMPT_OPTIMIZER_TASKS = {
+    "code_review": "代码审查",
+    "debug": "Debug / 排错",
+    "implementation": "功能实现",
+    "writing": "写作润色",
+    "product": "产品方案",
+    "summary": "总结提炼",
+    "translation": "翻译",
+    "learning": "学习解释",
+    "data": "数据分析",
+    "other": "其他",
+}
+
+_PROMPT_OPTIMIZER_RULE_CATALOG = {
+    "code_review": [
+        ("要求按严重程度排序", ("严重", "优先", "p0", "p1", "排序", "severity")),
+        ("要求给出文件、行号、原因和修复建议", ("文件", "行号", "line", "原因", "修复", "建议")),
+        ("明确关注 bug、回归风险、边界条件和缺失测试", ("bug", "回归", "边界", "测试", "风险")),
+        ("要求没有问题时明确说明剩余风险", ("没有问题", "无明显", "风险", "确认")),
+    ],
+    "debug": [
+        ("补充复现步骤、期望行为和实际行为", ("复现", "期望", "实际", "报错", "错误")),
+        ("要求先定位最可能根因，再给验证办法", ("根因", "定位", "验证", "排查")),
+        ("要求给出最小修复和防回归测试", ("修复", "测试", "回归", "最小")),
+    ],
+    "implementation": [
+        ("明确目标、边界、输入输出和验收标准", ("目标", "边界", "输入", "输出", "验收")),
+        ("要求遵循现有代码风格并尽量小改动", ("现有", "风格", "模式", "小改", "不要重构")),
+        ("要求包含测试或验证步骤", ("测试", "验证", "运行", "检查")),
+    ],
+    "writing": [
+        ("明确目标读者、语气和使用场景", ("读者", "语气", "风格", "场景")),
+        ("要求保留原意并指出关键改动", ("保留原意", "不改变", "改动理由", "润色")),
+        ("要求给出多个版本便于选择", ("多个版本", "三版", "选项", "备选")),
+    ],
+    "product": [
+        ("先明确目标用户、核心场景和问题定义", ("目标用户", "用户", "场景", "问题")),
+        ("要求区分 MVP、后续迭代和暂不做范围", ("mvp", "阶段", "迭代", "不做")),
+        ("要求给出多种方案并比较优缺点", ("方案", "优缺点", "比较", "替代")),
+        ("要求包含风险、隐私边界和评估指标", ("风险", "隐私", "指标", "评估")),
+    ],
+    "summary": [
+        ("要求先给结论，再分层展开", ("结论", "先说", "摘要", "要点")),
+        ("要求保留事实、数字和可行动事项", ("事实", "数字", "行动", "todo", "事项")),
+        ("要求按主题或优先级组织输出", ("主题", "优先级", "结构", "分组")),
+    ],
+    "translation": [
+        ("明确目标语言、语气和是否保留术语", ("翻译", "英文", "中文", "术语", "语气")),
+        ("要求自然表达而不是逐字直译", ("自然", "地道", "直译", "本地化")),
+        ("要求保留格式和专有名词", ("格式", "专有名词", "保留", "markdown")),
+    ],
+    "learning": [
+        ("要求用分层解释和例子讲清楚", ("解释", "例子", "类比", "分层")),
+        ("要求先给直觉，再补细节和常见误区", ("直觉", "细节", "误区", "为什么")),
+        ("要求给练习或检查理解的问题", ("练习", "检查", "问题", "测试")),
+    ],
+    "data": [
+        ("明确数据口径、字段含义和分析目标", ("数据", "字段", "口径", "指标")),
+        ("要求给出洞察、异常和下一步验证", ("洞察", "异常", "验证", "趋势")),
+        ("要求输出表格或可视化建议", ("表格", "图表", "可视化", "chart")),
+    ],
+    "other": [
+        ("补充目标、背景、约束和输出格式", ("目标", "背景", "约束", "格式")),
+        ("要求给出可执行建议和下一步", ("建议", "下一步", "执行", "落地")),
+    ],
+}
+
+_PROMPT_OPTIMIZER_DEFAULT_RULES = {
+    "code_review": [
+        "明确审查重点：bug、行为回归、边界条件、性能风险和缺失测试",
+        "按严重程度排序，每条包含证据、影响和建议修复方式",
+        "如果没有明显问题，说明仍需人工确认的风险",
+    ],
+    "debug": [
+        "补充现象、复现步骤、期望行为、实际行为和报错信息",
+        "先列最可能根因，再给验证步骤和最小修复方案",
+        "要求补充防回归测试或监控建议",
+    ],
+    "implementation": [
+        "明确目标、范围、输入输出、约束和验收标准",
+        "要求遵循现有代码结构与风格，优先小步修改",
+        "要求给出测试或验证命令",
+    ],
+    "writing": [
+        "明确目标读者、语气、使用场景和长度",
+        "要求保留原意，并说明关键改动理由",
+        "提供多个版本以便选择",
+    ],
+    "product": [
+        "明确目标用户、核心场景和要解决的问题",
+        "区分 MVP、后续迭代和暂不做范围",
+        "给出多种方案，比较优点、风险、成本和适用场景",
+        "包含隐私边界、评估指标和落地路线",
+    ],
+    "summary": [
+        "先给结论，再按主题分层展开",
+        "保留关键事实、数字、风险和待办事项",
+        "用清晰结构输出，便于快速扫读",
+    ],
+    "translation": [
+        "明确目标语言、语气、读者和术语保留规则",
+        "优先自然表达，避免机械直译",
+        "保留原文格式和专有名词",
+    ],
+    "learning": [
+        "先给直觉解释，再补原理、例子和常见误区",
+        "按初学者可理解的层次展开",
+        "最后给练习或自检问题",
+    ],
+    "data": [
+        "明确分析目标、数据口径和字段含义",
+        "输出洞察、异常、证据和下一步验证建议",
+        "必要时用表格组织结论",
+    ],
+    "other": [
+        "补充目标、背景、约束、输出格式和评估标准",
+        "要求给出可执行建议和下一步",
+    ],
+}
+
+_PROMPT_OPTIMIZER_TASK_KEYWORDS = {
+    "code_review": ("review", "审查", "代码审查", "pr", "pull request", "diff", "回归", "bug", "漏洞"),
+    "debug": ("debug", "报错", "错误", "异常", "排查", "定位", "为什么失败", "栈", "traceback"),
+    "implementation": ("实现", "写一个", "开发", "功能", "接口", "脚本", "组件", "代码", "改一下", "fix"),
+    "writing": ("润色", "改写", "文案", "文章", "语气", "标题", "邮件", "表达"),
+    "product": ("产品", "方案", "mvp", "路线", "用户", "需求", "功能列表", "商业", "架构"),
+    "summary": ("总结", "摘要", "提炼", "要点", "归纳", "会议纪要"),
+    "translation": ("翻译", "translate", "英文", "中文", "日文", "双语"),
+    "learning": ("解释", "讲讲", "学习", "原理", "是什么", "为什么", "教程"),
+    "data": ("数据", "分析", "指标", "报表", "表格", "趋势", "csv", "excel"),
+}
+
+_PROMPT_OPTIMIZER_SENSITIVE_PATTERNS = [
+    ("email", re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")),
+    ("phone", re.compile(r"(?<!\d)(?:\+?\d[\d\s().-]{7,}\d)(?!\d)")),
+    ("api_key", re.compile(r"\b(?:sk|ak|ghp|gho|glpat|xox[baprs])-?[A-Za-z0-9_\-]{16,}\b")),
+    ("secret_assignment", re.compile(r"\b(?:api[_-]?key|token|secret|password|passwd|pwd)\s*[:=]\s*['\"]?[^'\"\s]{8,}", re.I)),
+    ("url", re.compile(r"https?://[^\s<>'\"]+")),
+]
+
+
+def _clip_text(value: str, limit: int) -> str:
+    text = (value or "").strip()
+    return text if len(text) <= limit else text[:limit].rstrip() + "\n..."
+
+
+def _prompt_optimizer_keywords(text: str) -> Set[str]:
+    words = re.findall(r"[A-Za-z0-9_+\-#]{2,}|[\u4e00-\u9fff]{2,}", (text or "").lower())
+    stop = {
+        "the", "and", "for", "with", "this", "that", "from", "into", "请你", "帮我", "一个",
+        "这个", "下面", "一下", "需要", "如何", "什么", "可以", "以及", "或者",
+    }
+    return {w for w in words if w not in stop}
+
+
+def _prompt_optimizer_similarity(a: str, b: str) -> float:
+    ka = _prompt_optimizer_keywords(a)
+    kb = _prompt_optimizer_keywords(b)
+    if not ka or not kb:
+        return 0.0
+    return len(ka & kb) / max(1, len(ka | kb))
+
+
+def prompt_optimizer_task_label(task_type: str) -> str:
+    return _PROMPT_OPTIMIZER_TASKS.get(task_type or "other", _PROMPT_OPTIMIZER_TASKS["other"])
+
+
+def prompt_optimizer_classify_task(text: str) -> str:
+    lower = (text or "").lower()
+    scores: Dict[str, int] = defaultdict(int)
+    for task, keywords in _PROMPT_OPTIMIZER_TASK_KEYWORDS.items():
+        for keyword in keywords:
+            k = keyword.lower()
+            if re.fullmatch(r"[a-z0-9_ ]+", k):
+                found = re.search(rf"(?<![a-z0-9_]){re.escape(k)}(?![a-z0-9_])", lower) is not None
+            else:
+                found = k in lower
+            if found:
+                scores[task] += 2 if len(keyword) > 2 else 1
+    if "```" in lower or re.search(r"\b(def|class|function|const|let|import|select|from)\b", lower):
+        scores["implementation"] += 1
+    if re.search(r"(?<![a-z0-9_])pr(?![a-z0-9_])", lower) or re.search(r"(?<![a-z0-9_])diff(?![a-z0-9_])", lower):
+        scores["code_review"] += 2
+    if not scores:
+        return "other"
+    return max(scores.items(), key=lambda item: (item[1], item[0]))[0]
+
+
+def prompt_optimizer_privacy_scan(text: str) -> dict:
+    value = text or ""
+    hits = []
+    redacted = value
+    for kind, pattern in _PROMPT_OPTIMIZER_SENSITIVE_PATTERNS:
+        matches = list(pattern.finditer(redacted))
+        if matches:
+            hits.append({"type": kind, "count": len(matches)})
+            redacted = pattern.sub(f"[REDACTED_{kind.upper()}]", redacted)
+    return {
+        "has_sensitive": bool(hits),
+        "findings": hits,
+        "redacted_preview": _clip_text(redacted, 1600),
+    }
+
+
+def _prompt_optimizer_rule_id(task_type: str, rule: str) -> str:
+    digest = hashlib.sha1(f"{task_type}\n{rule}".encode("utf-8")).hexdigest()
+    return digest[:24]
+
+
+def prompt_optimizer_infer_rules_for_sample(prompt: str, response_summary: str, task_type: str) -> List[str]:
+    text = f"{prompt}\n{response_summary}".lower()
+    rules: List[str] = []
+    for rule, keywords in _PROMPT_OPTIMIZER_RULE_CATALOG.get(task_type, []):
+        if any(keyword.lower() in text for keyword in keywords):
+            rules.append(rule)
+    if not rules:
+        rules = _PROMPT_OPTIMIZER_DEFAULT_RULES.get(task_type, _PROMPT_OPTIMIZER_DEFAULT_RULES["other"])[:2]
+    return rules[:5]
+
+
+def prompt_optimizer_regenerate_rules(conn: sqlite3.Connection, task_type: str) -> None:
+    rows = conn.execute(
+        """
+        SELECT prompt, response_summary
+        FROM prompt_optimizer_samples
+        WHERE task_type = ? AND enabled = 1
+        """,
+        (task_type,),
+    ).fetchall()
+    disabled_rules = {
+        row["rule"]
+        for row in conn.execute(
+            "SELECT rule FROM prompt_optimizer_rules WHERE task_type = ? AND enabled = 0",
+            (task_type,),
+        ).fetchall()
+    }
+    conn.execute("DELETE FROM prompt_optimizer_rules WHERE task_type = ?", (task_type,))
+    if not rows:
+        return
+    counts: Dict[str, int] = defaultdict(int)
+    for row in rows:
+        for rule in prompt_optimizer_infer_rules_for_sample(row["prompt"], row["response_summary"], task_type):
+            counts[rule] += 1
+    sample_count = len(rows)
+    now = time.time()
+    for rule, count in sorted(counts.items(), key=lambda item: (-item[1], item[0]))[:8]:
+        confidence = min(0.95, 0.45 + (count / max(1, sample_count)) * 0.4 + min(sample_count, 10) * 0.02)
+        enabled = 0 if rule in disabled_rules else 1
+        conn.execute(
+            """
+            INSERT INTO prompt_optimizer_rules (
+                id, task_type, rule, sample_count, confidence, enabled, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(task_type, rule) DO UPDATE SET
+                sample_count = excluded.sample_count,
+                confidence = excluded.confidence,
+                enabled = excluded.enabled,
+                updated_at = excluded.updated_at
+            """,
+            (_prompt_optimizer_rule_id(task_type, rule), task_type, rule, count, confidence, enabled, now, now),
+        )
+
+
+def prompt_optimizer_sample_to_dict(row: sqlite3.Row) -> dict:
+    return {
+        "id": row["id"],
+        "title": row["title"] or "",
+        "prompt": row["prompt"] or "",
+        "response_summary": row["response_summary"] or "",
+        "task_type": row["task_type"] or "other",
+        "task_label": prompt_optimizer_task_label(row["task_type"] or "other"),
+        "source_type": row["source_type"] or "manual",
+        "source_session_id": row["source_session_id"] or "",
+        "allow_cloud_analysis": bool(row["allow_cloud_analysis"]),
+        "enabled": bool(row["enabled"]),
+        "note": row["note"] or "",
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+        "privacy": prompt_optimizer_privacy_scan(f"{row['prompt'] or ''}\n{row['response_summary'] or ''}"),
+    }
+
+
+def prompt_optimizer_rule_to_dict(row: sqlite3.Row) -> dict:
+    return {
+        "id": row["id"],
+        "task_type": row["task_type"],
+        "task_label": prompt_optimizer_task_label(row["task_type"]),
+        "rule": row["rule"],
+        "sample_count": int(row["sample_count"] or 0),
+        "confidence": float(row["confidence"] or 0),
+        "enabled": bool(row["enabled"]),
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+    }
+
+
+def prompt_optimizer_session_extract(session_id: str) -> Tuple[str, str, str]:
+    events = load_events(session_id)
+    first_prompt = ""
+    assistant_parts: List[str] = []
+    for ev in events:
+        if ev.get("type") == "user_input" and not first_prompt:
+            first_prompt = (ev.get("text") or "").strip()
+        elif ev.get("type") == "assistant":
+            for block in (ev.get("message") or {}).get("content") or []:
+                if block.get("type") == "text":
+                    text = (block.get("text") or "").strip()
+                    if text:
+                        assistant_parts.append(text)
+        if first_prompt and len("\n".join(assistant_parts)) > 1200:
+            break
+    title = derive_title(first_prompt)
+    return title, _clip_text(first_prompt, 8000), _clip_text("\n\n".join(assistant_parts), 1200)
+
+
+def prompt_optimizer_candidate_samples(conn: sqlite3.Connection, task_type: str, prompt: str, limit: int = 3) -> List[dict]:
+    rows = conn.execute(
+        """
+        SELECT id, title, prompt, response_summary, task_type, source_type, source_session_id,
+               allow_cloud_analysis, enabled, note, created_at, updated_at
+        FROM prompt_optimizer_samples
+        WHERE enabled = 1 AND (task_type = ? OR ? = 'other')
+        ORDER BY updated_at DESC
+        LIMIT 80
+        """,
+        (task_type, task_type),
+    ).fetchall()
+    scored = []
+    for row in rows:
+        score = _prompt_optimizer_similarity(prompt, row["prompt"])
+        if row["task_type"] == task_type:
+            score += 0.12
+        scored.append((score, row))
+    scored.sort(key=lambda item: (-item[0], -float(item[1]["updated_at"] or 0)))
+    result = []
+    for score, row in scored[:limit]:
+        item = prompt_optimizer_sample_to_dict(row)
+        item["similarity"] = round(score, 3)
+        item["prompt_excerpt"] = _clip_text(item["prompt"], 220)
+        item.pop("prompt", None)
+        item.pop("response_summary", None)
+        result.append(item)
+    return result
+
+
+def prompt_optimizer_enabled_rules(conn: sqlite3.Connection, task_type: str, limit: int = 5) -> List[dict]:
+    rows = conn.execute(
+        """
+        SELECT id, task_type, rule, sample_count, confidence, enabled, created_at, updated_at
+        FROM prompt_optimizer_rules
+        WHERE task_type = ? AND enabled = 1
+        ORDER BY confidence DESC, sample_count DESC, updated_at DESC
+        LIMIT ?
+        """,
+        (task_type, limit),
+    ).fetchall()
+    rules = [prompt_optimizer_rule_to_dict(row) for row in rows]
+    if rules:
+        return rules
+    return [
+        {
+            "id": f"default-{task_type}-{idx}",
+            "task_type": task_type,
+            "task_label": prompt_optimizer_task_label(task_type),
+            "rule": rule,
+            "sample_count": 0,
+            "confidence": 0.35,
+            "enabled": True,
+            "created_at": 0,
+            "updated_at": 0,
+        }
+        for idx, rule in enumerate(_PROMPT_OPTIMIZER_DEFAULT_RULES.get(task_type, _PROMPT_OPTIMIZER_DEFAULT_RULES["other"])[:limit])
+    ]
+
+
+def _prompt_optimizer_rule_sentence(rules: List[dict]) -> str:
+    if not rules:
+        return ""
+    return "\n".join(f"- {r['rule']}" for r in rules[:5])
+
+
+def prompt_optimizer_build_variants(prompt: str, task_type: str, rules: List[dict], similar_samples: List[dict]) -> List[dict]:
+    task_label = prompt_optimizer_task_label(task_type)
+    original = (prompt or "").strip()
+    rule_text = _prompt_optimizer_rule_sentence(rules)
+    similar_hint = ""
+    if similar_samples:
+        sample_titles = "、".join((s.get("title") or "相似样本")[:18] for s in similar_samples[:2])
+        similar_hint = f"\n\n参考你过去的相似高质量样本：{sample_titles}。"
+
+    light_parts = [
+        original,
+        "",
+        f"请围绕「{task_label}」给出清晰、可执行的回答。",
+    ]
+    if rule_text:
+        light_parts.append("请特别注意：\n" + rule_text)
+    light = "\n".join(light_parts).strip()
+
+    expert_sections = [
+        f"请作为资深{task_label}专家，处理下面这个请求。",
+        "",
+        "原始需求：",
+        original,
+        "",
+        "请先澄清你对目标的理解，然后直接给出高质量方案。",
+    ]
+    if rule_text:
+        expert_sections.extend(["", "请遵循这些个人偏好规则：", rule_text])
+    expert_sections.extend([
+        "",
+        "输出要求：",
+        "- 结论先行，避免空泛描述",
+        "- 明确假设、约束、风险和下一步",
+        "- 必要时用表格或清单组织信息",
+    ])
+    expert = "\n".join(expert_sections).strip()
+
+    explore_sections = [
+        f"我有一个「{task_label}」相关请求：",
+        original,
+        "",
+        "请不要只给单一路线。请给出至少 3 种可选方案，并比较：适用场景、优点、风险、实现成本和推荐顺序。",
+    ]
+    if rule_text:
+        explore_sections.extend(["", "请结合我的历史偏好：", rule_text])
+    explore_sections.append(similar_hint.strip())
+    explore = "\n".join(part for part in explore_sections if part is not None).strip()
+
+    return [
+        {
+            "id": "light",
+            "name": "轻度优化",
+            "description": "保留原意，只补目标、边界和输出要求。",
+            "prompt": light,
+        },
+        {
+            "id": "expert",
+            "name": "专家模式",
+            "description": "加入角色、约束、验收标准和结构化输出。",
+            "prompt": expert,
+        },
+        {
+            "id": "explore",
+            "name": "探索模式",
+            "description": "要求多路线比较，适合方案还没定型时使用。",
+            "prompt": explore,
+        },
+    ]
+
+
+def prompt_optimizer_stats_payload(conn: sqlite3.Connection) -> dict:
+    sample_count = conn.execute("SELECT COUNT(*) AS c FROM prompt_optimizer_samples").fetchone()["c"]
+    enabled_samples = conn.execute("SELECT COUNT(*) AS c FROM prompt_optimizer_samples WHERE enabled = 1").fetchone()["c"]
+    rule_count = conn.execute("SELECT COUNT(*) AS c FROM prompt_optimizer_rules").fetchone()["c"]
+    rewrite_count = conn.execute("SELECT COUNT(*) AS c FROM prompt_optimizer_rewrites").fetchone()["c"]
+    task_rows = conn.execute(
+        """
+        SELECT task_type, COUNT(*) AS count
+        FROM prompt_optimizer_samples
+        WHERE enabled = 1
+        GROUP BY task_type
+        ORDER BY count DESC, task_type
+        """
+    ).fetchall()
+    return {
+        "sample_count": int(sample_count or 0),
+        "enabled_samples": int(enabled_samples or 0),
+        "rule_count": int(rule_count or 0),
+        "rewrite_count": int(rewrite_count or 0),
+        "tasks": [
+            {"task_type": r["task_type"], "task_label": prompt_optimizer_task_label(r["task_type"]), "count": int(r["count"] or 0)}
+            for r in task_rows
+        ],
+        "local_first": True,
+        "cloud_analysis": "not_used_by_default",
+    }
 
 
 def _app_meta_get(key: str) -> str:
@@ -3248,6 +3826,278 @@ def feedback_stats_payload() -> dict:
             for row in recent_rows
         ],
     }
+
+
+def prompt_optimizer_feedback_candidates(conn: sqlite3.Connection) -> List[dict]:
+    rows = conn.execute(
+        """
+        SELECT f.session_id,
+               MAX(f.updated_at) AS updated_at,
+               SUM(CASE WHEN f.rating = 'up' THEN 1 ELSE 0 END) AS up_count,
+               SUM(CASE WHEN f.starred = 1 THEN 1 ELSE 0 END) AS starred_count,
+               COALESCE(s.title, '') AS session_title,
+               COALESCE(s.cwd, '') AS cwd,
+               EXISTS(
+                   SELECT 1 FROM prompt_optimizer_samples p
+                   WHERE p.source_session_id = f.session_id
+               ) AS already_sampled
+        FROM message_feedback f
+        LEFT JOIN sessions s ON s.id = f.session_id
+        WHERE f.rating = 'up' OR f.starred = 1
+        GROUP BY f.session_id
+        ORDER BY updated_at DESC
+        LIMIT 24
+        """
+    ).fetchall()
+    return [
+        {
+            "session_id": row["session_id"],
+            "title": row["session_title"] or row["session_id"],
+            "cwd": row["cwd"] or "",
+            "updated_at": row["updated_at"],
+            "up_count": int(row["up_count"] or 0),
+            "starred_count": int(row["starred_count"] or 0),
+            "already_sampled": bool(row["already_sampled"]),
+        }
+        for row in rows
+    ]
+
+
+@app.get("/api/prompt-optimizer")
+async def prompt_optimizer_dashboard():
+    with db_connect() as conn:
+        sample_rows = conn.execute(
+            """
+            SELECT id, title, prompt, response_summary, task_type, source_type, source_session_id,
+                   allow_cloud_analysis, enabled, note, created_at, updated_at
+            FROM prompt_optimizer_samples
+            ORDER BY updated_at DESC
+            LIMIT 40
+            """
+        ).fetchall()
+        rule_rows = conn.execute(
+            """
+            SELECT id, task_type, rule, sample_count, confidence, enabled, created_at, updated_at
+            FROM prompt_optimizer_rules
+            ORDER BY task_type, confidence DESC, sample_count DESC
+            """
+        ).fetchall()
+        return {
+            "stats": prompt_optimizer_stats_payload(conn),
+            "samples": [prompt_optimizer_sample_to_dict(row) for row in sample_rows],
+            "rules": [prompt_optimizer_rule_to_dict(row) for row in rule_rows],
+            "candidates": prompt_optimizer_feedback_candidates(conn),
+            "task_types": [
+                {"id": key, "label": label}
+                for key, label in _PROMPT_OPTIMIZER_TASKS.items()
+            ],
+        }
+
+
+@app.post("/api/prompt-optimizer/samples")
+async def prompt_optimizer_create_sample(req: PromptOptimizerSampleRequest):
+    prompt = _clip_text(req.prompt, 12000)
+    if not prompt:
+        raise HTTPException(status_code=400, detail="prompt required")
+    response_summary = _clip_text(req.response_summary or "", 3000)
+    task_type = req.task_type if req.task_type in _PROMPT_OPTIMIZER_TASKS else prompt_optimizer_classify_task(prompt)
+    now = time.time()
+    sample_id = uuid.uuid4().hex
+    title = (req.title or "").strip() or derive_title(prompt)
+    with db_connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO prompt_optimizer_samples (
+                id, title, prompt, response_summary, task_type, source_type, source_session_id,
+                allow_cloud_analysis, enabled, note, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                sample_id,
+                title[:120],
+                prompt,
+                response_summary,
+                task_type,
+                (req.source_type or "manual")[:40],
+                (req.source_session_id or "")[:120],
+                1 if req.allow_cloud_analysis else 0,
+                1 if req.enabled is not False else 0,
+                _clip_text(req.note or "", 1000),
+                now,
+                now,
+            ),
+        )
+        prompt_optimizer_regenerate_rules(conn, task_type)
+        row = conn.execute(
+            """
+            SELECT id, title, prompt, response_summary, task_type, source_type, source_session_id,
+                   allow_cloud_analysis, enabled, note, created_at, updated_at
+            FROM prompt_optimizer_samples
+            WHERE id = ?
+            """,
+            (sample_id,),
+        ).fetchone()
+        stats = prompt_optimizer_stats_payload(conn)
+    return {"sample": prompt_optimizer_sample_to_dict(row), "stats": stats}
+
+
+@app.post("/api/prompt-optimizer/samples/from-session")
+async def prompt_optimizer_create_sample_from_session(req: PromptOptimizerSessionSampleRequest):
+    source_session_id = (req.session_id or "").strip()
+    if not source_session_id:
+        raise HTTPException(status_code=400, detail="session_id required")
+    title, prompt, response_summary = prompt_optimizer_session_extract(source_session_id)
+    if not prompt:
+        raise HTTPException(status_code=400, detail="session has no user prompt")
+    task_type = prompt_optimizer_classify_task(prompt)
+    now = time.time()
+    with db_connect() as conn:
+        existing = conn.execute(
+            """
+            SELECT id FROM prompt_optimizer_samples
+            WHERE source_session_id = ?
+            ORDER BY updated_at DESC
+            LIMIT 1
+            """,
+            (source_session_id,),
+        ).fetchone()
+        if existing:
+            sample_id = existing["id"]
+            conn.execute(
+                """
+                UPDATE prompt_optimizer_samples
+                SET title = ?, prompt = ?, response_summary = ?, task_type = ?,
+                    source_type = 'session', allow_cloud_analysis = ?,
+                    enabled = 1, note = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (title[:120], prompt, response_summary, task_type, 1 if req.allow_cloud_analysis else 0, _clip_text(req.note or "", 1000), now, sample_id),
+            )
+        else:
+            sample_id = uuid.uuid4().hex
+            conn.execute(
+                """
+                INSERT INTO prompt_optimizer_samples (
+                    id, title, prompt, response_summary, task_type, source_type, source_session_id,
+                    allow_cloud_analysis, enabled, note, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, 'session', ?, ?, 1, ?, ?, ?)
+                """,
+                (sample_id, title[:120], prompt, response_summary, task_type, source_session_id, 1 if req.allow_cloud_analysis else 0, _clip_text(req.note or "", 1000), now, now),
+            )
+        prompt_optimizer_regenerate_rules(conn, task_type)
+        row = conn.execute(
+            """
+            SELECT id, title, prompt, response_summary, task_type, source_type, source_session_id,
+                   allow_cloud_analysis, enabled, note, created_at, updated_at
+            FROM prompt_optimizer_samples
+            WHERE id = ?
+            """,
+            (sample_id,),
+        ).fetchone()
+        stats = prompt_optimizer_stats_payload(conn)
+    return {"sample": prompt_optimizer_sample_to_dict(row), "stats": stats}
+
+
+@app.delete("/api/prompt-optimizer/samples/{sample_id}")
+async def prompt_optimizer_delete_sample(sample_id: str):
+    with db_connect() as conn:
+        row = conn.execute("SELECT task_type FROM prompt_optimizer_samples WHERE id = ?", (sample_id,)).fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail="sample not found")
+        task_type = row["task_type"]
+        conn.execute("DELETE FROM prompt_optimizer_samples WHERE id = ?", (sample_id,))
+        prompt_optimizer_regenerate_rules(conn, task_type)
+    return {"ok": True}
+
+
+@app.patch("/api/prompt-optimizer/rules/{rule_id}")
+async def prompt_optimizer_patch_rule(rule_id: str, req: PromptOptimizerRulePatch):
+    with db_connect() as conn:
+        row = conn.execute("SELECT id FROM prompt_optimizer_rules WHERE id = ?", (rule_id,)).fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail="rule not found")
+        if req.enabled is not None:
+            conn.execute(
+                "UPDATE prompt_optimizer_rules SET enabled = ?, updated_at = ? WHERE id = ?",
+                (1 if req.enabled else 0, time.time(), rule_id),
+            )
+    return {"ok": True}
+
+
+@app.post("/api/prompt-optimizer/rewrite")
+async def prompt_optimizer_rewrite(req: PromptOptimizerRewriteRequest):
+    prompt = (req.prompt or "").strip()
+    if not prompt:
+        raise HTTPException(status_code=400, detail="prompt required")
+    task_type = req.task_type if req.task_type in _PROMPT_OPTIMIZER_TASKS else prompt_optimizer_classify_task(prompt)
+    privacy = prompt_optimizer_privacy_scan(prompt)
+    with db_connect() as conn:
+        rules = prompt_optimizer_enabled_rules(conn, task_type)
+        similar_samples = prompt_optimizer_candidate_samples(conn, task_type, prompt)
+        variants = prompt_optimizer_build_variants(prompt, task_type, rules, similar_samples)
+        rewrite_id = uuid.uuid4().hex
+        conn.execute(
+            """
+            INSERT INTO prompt_optimizer_rewrites (
+                id, original_prompt, task_type, variants_json, used_rules_json,
+                similar_samples_json, privacy_json, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                rewrite_id,
+                prompt,
+                task_type,
+                json.dumps(variants, ensure_ascii=False),
+                json.dumps(rules, ensure_ascii=False),
+                json.dumps(similar_samples, ensure_ascii=False),
+                json.dumps(privacy, ensure_ascii=False),
+                time.time(),
+            ),
+        )
+    explanation = (
+        f"已识别为「{prompt_optimizer_task_label(task_type)}」。"
+        f"本次使用 {len(rules)} 条规则、{len(similar_samples)} 条相似样本；"
+        "仅在本地生成改写，未上传给 Claude。"
+    )
+    return {
+        "id": rewrite_id,
+        "task_type": task_type,
+        "task_label": prompt_optimizer_task_label(task_type),
+        "variants": variants,
+        "used_rules": rules,
+        "similar_samples": similar_samples,
+        "privacy": privacy,
+        "explanation": explanation,
+        "local_only": True,
+    }
+
+
+@app.post("/api/prompt-optimizer/feedback")
+async def prompt_optimizer_feedback(req: PromptOptimizerFeedbackRequest):
+    rewrite_id = (req.rewrite_id or "").strip()
+    if not rewrite_id:
+        raise HTTPException(status_code=400, detail="rewrite_id required")
+    with db_connect() as conn:
+        row = conn.execute("SELECT id FROM prompt_optimizer_rewrites WHERE id = ?", (rewrite_id,)).fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail="rewrite not found")
+        conn.execute(
+            """
+            INSERT INTO prompt_optimizer_feedback (
+                id, rewrite_id, variant_id, action, rating, note, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                uuid.uuid4().hex,
+                rewrite_id,
+                (req.variant_id or "")[:40],
+                (req.action or "")[:40],
+                (req.rating or "")[:40],
+                _clip_text(req.note or "", 1000),
+                time.time(),
+            ),
+        )
+    return {"ok": True}
 
 
 @app.get("/api/sessions/{session_id}")
