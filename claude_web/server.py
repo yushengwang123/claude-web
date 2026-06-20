@@ -8,9 +8,11 @@ import logging
 import os
 import re
 import secrets
+import shlex
 import shutil
 import socket
 import sqlite3
+import subprocess
 import threading
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -64,6 +66,196 @@ KNOWN_TOOL_NAMES = {
     "Bash", "Read", "Write", "Edit", "MultiEdit", "Grep", "Glob",
     "WebFetch", "WebSearch", "TodoWrite", "Task", "NotebookEdit",
 }
+
+# ===== Pydantic models for extended APIs =====
+
+class DirPickerRequest(BaseModel):
+    cwd: str
+
+
+class FileContentRequest(BaseModel):
+    path: str
+    max_lines: Optional[int] = 10000
+
+
+class FileSaveRequest(BaseModel):
+    path: str
+    content: str
+
+
+class GitRunRequest(BaseModel):
+    cwd: str
+    command: str
+    args: Optional[List[str]] = None
+
+
+class GitDiffRequest(BaseModel):
+    path: str
+    cwd: str
+    cached: Optional[bool] = False
+
+
+class GitLogRequest(BaseModel):
+    cwd: str
+    limit: Optional[int] = 50
+
+
+# Whitelisted git command patterns
+_GIT_CMD_WHITELIST = {
+    "init": [], "clone": [], "status": [], "add": [], "commit": [],
+    "push": [], "pull": [], "fetch": [], "branch": [], "checkout": [],
+    "switch": [], "merge": [], "rebase": [], "log": [], "diff": [],
+    "stash": [], "reset": [], "revert": [], "tag": [], "remote": [],
+    "rm": [], "mv": [],
+}
+
+
+def _sanitize_path(p: str) -> Path:
+    resolved = Path(os.path.expanduser(p)).resolve()
+    return resolved
+
+
+def _validate_path_in_dir(target: Path, parent: Path) -> bool:
+    try:
+        target.relative_to(parent)
+        return True
+    except ValueError:
+        return False
+
+
+def _safe_git_run(cwd: str, *args: str) -> Optional[dict]:
+    try:
+        proc = asyncio.get_event_loop().run_in_executor(
+            None, _git_run_sync, os.path.expanduser(cwd), args,
+        )
+        return asyncio.get_event_loop().run_until_complete(proc)
+    except Exception:
+        return None
+
+
+def _git_run_sync(cwd: str, args: tuple) -> dict:
+    try:
+        proc = subprocess.run(
+            ["git", "-C", cwd] + list(args), capture_output=True, timeout=15,
+        )
+        return {
+            "stdout": proc.stdout.decode("utf-8", errors="replace"),
+            "stderr": proc.stderr.decode("utf-8", errors="replace"),
+            "returncode": proc.returncode,
+        }
+    except subprocess.TimeoutExpired:
+        return {"stdout": "", "stderr": "timeout", "returncode": -1}
+    except FileNotFoundError:
+        return {"stdout": "", "stderr": "git not found", "returncode": -1}
+    except Exception as e:
+        return {"stdout": "", "stderr": str(e), "returncode": -1}
+
+
+# ===== Git status helpers =====
+
+_STATUS_GROUPS = {
+    'staged_modified': {'label': '已添加的修改', 'icon': '📝', 'color': '#3b82f6', 'key': 'staged_modified'},
+    'staged_added': {'label': '已添加的新建', 'icon': '📄', 'color': '#3b82f6', 'key': 'staged_added'},
+    'staged_renamed': {'label': '已添加的重命名', 'icon': '🏷️', 'color': '#3b82f6', 'key': 'staged_renamed'},
+    'staged_copied': {'label': '已添加的复制', 'icon': '📋', 'color': '#3b82f6', 'key': 'staged_copied'},
+    'staged_untracked': {'label': '已添加的未跟踪文件', 'icon': '📌', 'color': '#6366f1', 'key': 'staged_untracked'},
+    'modified': {'label': '已修改', 'icon': '✏️', 'color': '#f59e0b', 'key': 'modified'},
+    'deleted': {'label': '已删除', 'icon': '🗑️', 'color': '#ef4444', 'key': 'deleted'},
+    'deleted_staged': {'label': '已添加的删除', 'icon': '🗑️', 'color': '#ef4444', 'key': 'deleted_staged'},
+    'added': {'label': '新建', 'icon': '✨', 'color': '#10b981', 'key': 'added'},
+    'renamed': {'label': '已重命名', 'icon': '🏷️', 'color': '#8b5cf6', 'key': 'renamed'},
+    'copied': {'label': '已复制', 'icon': '📋', 'color': '#06b6d4', 'key': 'copied'},
+    'untracked': {'label': '未跟踪', 'icon': '❓', 'color': '#6b7280', 'key': 'untracked'},
+    'other': {'label': '其他', 'icon': '⚠️', 'color': '#6b7280', 'key': 'other'},
+}
+
+def _file_status_category(status: str) -> str:
+    first = status[0] if len(status) >= 1 else '?'
+    second = status[1] if len(status) >= 2 else ' '
+    if first == '?': return 'untracked'
+    if first == 'D': return 'deleted'
+    if first == 'R': return 'renamed'
+    if first == 'C': return 'copied'
+    if first == 'A': return 'added'
+    if first == 'M' or first == 'T' or first == 'U': return 'modified'
+    if first == ' ':
+        if second == 'D': return 'deleted_staged'
+        if second == 'M': return 'staged_modified'
+        if second == 'A': return 'staged_added'
+        if second == 'R': return 'staged_renamed'
+        if second == 'C': return 'staged_copied'
+        if second == '?': return 'staged_untracked'
+        return 'staged_modified'
+    return 'other'
+
+
+def _parse_git_status_porcelain(lines: List[str]) -> List[dict]:
+    result: List[dict] = []
+    for line in lines:
+        if not line: continue
+        null_idx = line.find('\0')
+        if null_idx >= 0:
+            entry = line[:null_idx]
+            remaining = line[null_idx:]
+        else:
+            entry = line
+            remaining = ''
+        if len(entry) >= 5 and entry[4] == ' ':
+            raw_status = entry[:4]; rest = entry[5:]; status = raw_status[0] + ' '
+        elif len(entry) >= 3 and entry[2] == ' ':
+            raw_status = entry[:2]; rest = entry[3:]; status = raw_status
+        else: continue
+        renames = None
+        if remaining.startswith('\0'):
+            rename_path = remaining[1:].strip()
+            if rename_path: renames = rename_path
+        result.append({'status': status, 'secondary': None, 'filename': rest, 'renames': renames})
+    return result
+
+
+def _parse_git_diff_lines(output: str) -> List[dict]:
+    if not output: return []
+    lines = output.split("\n")
+    result: List[dict] = []
+    old_line = 0; new_line = 0
+    for line in lines:
+        if line.startswith("diff ") or line.startswith("index ") or line.startswith("--- ") or line.startswith("+++ "): continue
+        if line.startswith("@@"):
+            m = re.search(r"-(\d+)(?:,\d+)?\+(\d+)(?:,\d+)?", line)
+            if m: old_line = int(m.group(1)); new_line = int(m.group(2))
+            continue
+        if not line: continue
+        if line[0] == "+":
+            result.append({"line_old": None, "line_new": new_line, "content": "+ " + line[1:], "type": "add"}); new_line += 1
+        elif line[0] == "-":
+            result.append({"line_old": old_line, "line_new": None, "content": "- " + line[1:], "type": "remove"}); old_line += 1
+        elif line[0] == " ":
+            result.append({"line_old": old_line, "line_new": new_line, "content": "  " + line[1:], "type": "context"}); old_line += 1; new_line += 1
+        else:
+            result.append({"line_old": None, "line_new": None, "content": line, "type": "other"})
+    return result
+
+
+def _detect_language(filename: str) -> str:
+    ext = Path(filename).suffix.lower().lstrip(".")
+    EXT_LANG_MAP = {
+        "py": "python", "js": "javascript", "ts": "typescript", "tsx": "typescript", "jsx": "javascript",
+        "go": "go", "rs": "rust", "rb": "ruby", "java": "java", "c": "c", "cpp": "cpp", "h": "c",
+        "cs": "csharp", "php": "php", "swift": "swift", "kt": "kotlin", "scala": "scala",
+        "sh": "bash", "bash": "bash", "zsh": "bash", "ps1": "powershell", "psm1": "powershell",
+        "html": "html", "css": "css", "scss": "scss", "less": "less",
+        "json": "json", "yaml": "yaml", "yml": "yaml", "toml": "toml", "xml": "xml",
+        "md": "markdown", "sql": "sql", "dockerfile": "dockerfile",
+        "lua": "lua", "r": "r", "m": "matlab", "pl": "perl",
+        "proto": "protobuf", "graphql": "graphql",
+    }
+    return EXT_LANG_MAP.get(ext, "")
+
+
+class GitCommitRequest(BaseModel):
+    cwd: str
+    message: str
+
 
 _running_processes: Dict[str, asyncio.subprocess.Process] = {}
 _stopped_sessions: Set[str] = set()
@@ -5661,7 +5853,304 @@ async def git_status(cwd: str = Query(...)):
     return {"branch": branch, "dirty": dirty, "available": True}
 
 
+# ===== Git Status Detail =====
+
+
+@app.get("/api/git/status-detail")
+async def git_status_detail(cwd: str = Query(default="")):
+    git_cwd = os.path.expanduser(cwd) if cwd else "."
+    if not os.path.isdir(git_cwd):
+        return {"branch": "", "dirty": 0, "available": False}
+    branch_proc = await asyncio.create_subprocess_exec(
+        "git", "-C", git_cwd, "rev-parse", "--abbrev-ref", "HEAD",
+        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+    )
+    try:
+        branch_out, _ = await asyncio.wait_for(branch_proc.communicate(), timeout=5)
+    except asyncio.TimeoutError:
+        branch_proc.kill()
+        return {"branch": "", "dirty": 0, "available": False}
+    branch = branch_out.decode("utf-8", errors="replace").strip() if branch_proc.returncode == 0 else ""
+    staged_proc = await asyncio.create_subprocess_exec(
+        "git", "-C", git_cwd, "diff", "--cached", "--name-only",
+        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+    )
+    try:
+        staged_out, _ = await asyncio.wait_for(staged_proc.communicate(), timeout=5)
+    except asyncio.TimeoutError:
+        staged_proc.kill()
+        return {"branch": branch, "dirty": 0, "available": True, "files": [], "staged": []}
+    staged_files = []
+    if staged_proc.returncode == 0 and staged_out.strip():
+        staged_files = [f.strip() for f in staged_out.decode("utf-8", errors="replace").splitlines() if f.strip()]
+    porcelain_proc = await asyncio.create_subprocess_exec(
+        "git", "-C", git_cwd, "status", "--porcelain", "-z", "--untracked-files=all",
+        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+    )
+    try:
+        porcelain_out, _ = await asyncio.wait_for(porcelain_proc.communicate(), timeout=5)
+    except asyncio.TimeoutError:
+        porcelain_proc.kill()
+        return {"branch": branch, "dirty": 0, "available": True, "files": [], "staged": staged_files}
+    if porcelain_proc.returncode != 0:
+        return {"branch": branch, "dirty": 0, "available": True, "files": [], "staged": staged_files}
+    raw = porcelain_out.decode("utf-8", errors="replace")
+    entries = raw.split('\0') if '\0' in raw else raw.splitlines()
+    lines = [e for e in entries if e.strip()]
+    files = _parse_git_status_porcelain(lines)
+    groups: Dict[str, List[dict]] = {}
+    for f in files:
+        cat = _file_status_category(f['status'])
+        groups.setdefault(cat, []).append(f)
+    ordered_files = []
+    for cat_key, info in _STATUS_GROUPS.items():
+        group_files = groups.get(cat_key, [])
+        if not group_files: continue
+        ordered_files.append({'category': info['label'], 'icon': info['icon'], 'color': info['color'], 'key': cat_key, 'files': group_files})
+    dirty = len(files)
+    remote_proc = await asyncio.create_subprocess_exec(
+        "git", "-C", git_cwd, "remote", "get-url", "origin",
+        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+    )
+    try:
+        remote_out, _ = await asyncio.wait_for(remote_proc.communicate(), timeout=3)
+    except asyncio.TimeoutError:
+        remote_out = b""
+    remote_url = remote_out.decode("utf-8", errors="replace").strip() if remote_proc.returncode == 0 else ""
+    return {"branch": branch, "dirty": dirty, "available": True, "files": ordered_files, "staged": staged_files, "remote_url": remote_url}
+
+
+# ===== File Explorer =====
+
+
+@app.post("/api/dir-picker")
+async def dir_picker(req: DirPickerRequest):
+    base = _sanitize_path(req.cwd)
+    if not base.is_dir(): return {"dirs": []}
+    dirs = []
+    try:
+        for entry in sorted(base.iterdir()):
+            if entry.is_dir() and entry.name not in IGNORED_DIRS and not entry.name.startswith("."):
+                dirs.append({"name": entry.name, "path": str(entry)})
+    except OSError: pass
+    return {"cwd": str(base), "dirs": dirs}
+
+
+@app.post("/api/tree")
+async def get_tree(req: FileContentRequest):
+    base = _sanitize_path(req.path)
+    if not base.is_dir(): return {"path": str(base), "children": []}
+    children = []
+    try:
+        for entry in sorted(base.iterdir(), key=lambda e: (not e.is_dir(), e.name.lower())):
+            if entry.name.startswith(".") and entry.name not in (".github", ".vscode", ".idea"): continue
+            if entry.name in IGNORED_DIRS: continue
+            info: dict = {"name": entry.name, "type": "dir" if entry.is_dir() else "file"}
+            if entry.is_file():
+                try:
+                    stat = entry.stat()
+                    info["size"] = stat.st_size
+                    info["modified"] = stat.st_mtime
+                except OSError: pass
+            children.append(info)
+    except OSError: pass
+    return {"path": str(base), "children": children}
+
+
+@app.get("/api/file-content")
+async def get_file_content(path: str = Query(...), max_lines: int = Query(default=10000)):
+    target = _sanitize_path(path)
+    if not target.is_file(): raise HTTPException(status_code=404, detail="file not found")
+    try: raw = target.read_bytes()
+    except OSError as e: raise HTTPException(status_code=400, detail=str(e))
+    if len(raw) > 5 * 1024 * 1024: raise HTTPException(status_code=413, detail="file too large (max 5MB)")
+    try:
+        text = _decode_text_upload(raw) if b"\x00" in raw[:8192] else raw.decode("utf-8", errors="replace")
+    except HTTPException:
+        text = f"[二进制文件，无法以文本方式显示 ({len(raw)} 字节)]"
+    all_lines = text.split("\n")
+    total = len(all_lines)
+    display_lines = all_lines[:max_lines]
+    if len(all_lines) > max_lines: display_lines.append(f"... ({total - max_lines} more lines truncated ...)")
+    lang = _detect_language(str(target))
+    return {"path": str(target), "content": text, "lines": [{"num": i + 1, "text": l} for i, l in enumerate(display_lines)], "lines_total": total, "language": lang, "size": len(raw)}
+
+
+@app.post("/api/file-save")
+async def save_file(req: FileSaveRequest):
+    target = _sanitize_path(req.path)
+    if not target.parent.is_dir(): raise HTTPException(status_code=400, detail="parent directory not found")
+    if len(req.content) > 10 * 1024 * 1024: raise HTTPException(status_code=413, detail="content too large")
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(req.content, encoding="utf-8")
+    except OSError as e: raise HTTPException(status_code=400, detail=str(e))
+    return {"ok": True, "path": str(target)}
+
+
+# ===== Git Operations =====
+
+
+@app.post("/api/git/discard")
+async def git_discard(req: GitRunRequest):
+    cwd = os.path.expanduser(req.cwd)
+    if not os.path.isdir(cwd): raise HTTPException(status_code=400, detail="cwd not found")
+    filename = req.command.strip()
+    try:
+        target = Path(filename).resolve()
+        target.relative_to(Path(cwd).resolve())
+    except (ValueError, OSError): raise HTTPException(status_code=400, detail="invalid filename")
+    proc = await asyncio.create_subprocess_exec("git", "-C", cwd, "checkout", "--", filename, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+    _, _ = await proc.communicate()
+    if proc.returncode == 0: return {"ok": True, "stdout": "", "stderr": ""}
+    proc = await asyncio.create_subprocess_exec("git", "-C", cwd, "clean", "-f", "--", filename, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+    _, _ = await proc.communicate()
+    if proc.returncode == 0: return {"ok": True, "stdout": "", "stderr": ""}
+    try:
+        rm_proc = await asyncio.create_subprocess_exec("rm", "-f", filename, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+        _, _ = await rm_proc.communicate()
+        if rm_proc.returncode == 0: return {"ok": True, "stdout": "", "stderr": ""}
+    except Exception: pass
+    raise HTTPException(status_code=400, detail="discard failed")
+
+
+@app.post("/api/git/run")
+async def git_run(req: GitRunRequest):
+    cwd = os.path.expanduser(req.cwd)
+    if not os.path.isdir(cwd): raise HTTPException(status_code=400, detail="cwd not found")
+    parts = shlex.split(req.command.strip())
+    if not parts: raise HTTPException(status_code=400, detail="empty command")
+    main_cmd = parts[0].lower()
+    if main_cmd != "git": raise HTTPException(status_code=403, detail=f"command not allowed: {main_cmd}")
+    sub_parts = parts[1:]
+    if not sub_parts: raise HTTPException(status_code=400, detail="missing subcommand")
+    subcmd = sub_parts[0].lower()
+    if subcmd not in _GIT_CMD_WHITELIST: raise HTTPException(status_code=403, detail=f"git subcommand not allowed: {subcmd}")
+    if subcmd in ("push",) and "--force" in " ".join(parts[2:]): raise HTTPException(status_code=403, detail="force push is not allowed via UI")
+    git_args = parts[1:]
+    result = await asyncio.to_thread(_git_run_sync, cwd, tuple(git_args))
+    if result.get("returncode", 0) != 0:
+        detail = result.get("stderr", "") or result.get("stdout", "") or f"git {subcmd} failed"
+        raise HTTPException(status_code=400, detail=detail.strip())
+    return result
+
+
+@app.post("/api/git/commit")
+async def git_commit(req: GitCommitRequest):
+    cwd = os.path.expanduser(req.cwd)
+    if not os.path.isdir(cwd): raise HTTPException(status_code=400, detail="cwd not found")
+    if not req.message.strip(): raise HTTPException(status_code=400, detail="commit message cannot be empty")
+    try:
+        add_proc = await asyncio.create_subprocess_exec("git", "-C", cwd, "add", "-A", stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+        await asyncio.wait_for(add_proc.communicate(), timeout=15)
+        proc = await asyncio.create_subprocess_exec("git", "-C", cwd, "commit", "-m", req.message, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=15)
+        return {"stdout": stdout.decode("utf-8", errors="replace"), "stderr": stderr.decode("utf-8", errors="replace"), "returncode": proc.returncode}
+    except asyncio.TimeoutExpired: raise HTTPException(status_code=408, detail="git commit timed out")
+    except FileNotFoundError: raise HTTPException(status_code=500, detail="git not found")
+    except Exception as e: raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/git/diff")
+async def git_diff(path: str = Query(...), cwd: str = Query(default=""), cached: bool = Query(default=False)):
+    git_cwd = os.path.expanduser(cwd) if cwd else "."
+    if not os.path.isdir(git_cwd): return {"file": "", "diff_lines": []}
+    try:
+        target = _sanitize_path(path)
+        rel_path = str(target.relative_to(_sanitize_path(git_cwd))) if _sanitize_path(git_cwd) in target.parents or _sanitize_path(git_cwd) == target else target.name
+    except (ValueError, OSError): rel_path = Path(path).name
+    if cached:
+        proc = await asyncio.create_subprocess_exec("git", "-C", git_cwd, "diff", "--cached", "--", rel_path, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+    else:
+        proc = await asyncio.create_subprocess_exec("git", "-C", git_cwd, "diff", "--", rel_path, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+    try: stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=10)
+    except asyncio.TimeoutError: proc.kill(); await proc.wait(); return {"file": rel_path, "diff_lines": []}
+    if proc.returncode != 0: return {"file": rel_path, "diff_lines": []}
+    output = stdout.decode("utf-8", errors="replace").strip()
+    diff_lines = _parse_git_diff_lines(output)
+    return {"file": rel_path, "diff_lines": diff_lines}
+
+
+@app.get("/api/git/log")
+async def git_log(cwd: str = Query(default=""), limit: int = Query(default=50)):
+    git_cwd = os.path.expanduser(cwd) if cwd else "."
+    if not os.path.isdir(git_cwd): return {"commits": [], "graph": ""}
+    try:
+        proc = await asyncio.create_subprocess_exec("git", "-C", git_cwd, "log", "--graph", f"--max-count={limit}", "--oneline", "--format=%h %s %cd", "--date=relative", stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+        try: stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=10)
+        except asyncio.TimeoutError: proc.kill(); await proc.wait(); return {"commits": [], "graph": ""}
+        if proc.returncode != 0: return {"commits": [], "graph": ""}
+    except Exception: return {"commits": [], "graph": ""}
+    raw = stdout.decode("utf-8", errors="replace")
+    commits = []; graph_lines = []
+    for line in raw.splitlines():
+        stripped = line.strip()
+        if not stripped: continue
+        graph_lines.append(line)
+        cleaned = re.sub(r'^[\s\|\-\+\*\/\n]+', '', stripped)
+        parts = cleaned.split(" ", 1)
+        if len(parts) >= 2:
+            hash_val, message = parts[0], parts[1]
+            time_match = re.search(r'\(([^)]+)\)$', message)
+            time_str = ""; msg_clean = message
+            if time_match: time_str = time_match.group(1); msg_clean = message[:time_match.start()].rstrip()
+            commits.append({"hash": hash_val, "message": msg_clean, "time": time_str, "graph": stripped})
+        elif len(parts) == 1:
+            if commits: commits[-1]["graph"] = (commits[-1].get("graph", "") + "\n" + parts[0]).strip()
+    return {"commits": commits, "graph": "\n".join(graph_lines[:10])}
+
+
+# ===== CWD History =====
+
+
+@app.get("/api/cwd-history")
+async def list_cwd_history():
+    with db_connect() as conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS cwd_history (
+                id TEXT PRIMARY KEY, path TEXT NOT NULL UNIQUE, created_at REAL NOT NULL
+            )
+        """)
+        rows = conn.execute("SELECT path, created_at FROM cwd_history ORDER BY created_at DESC LIMIT 50").fetchall()
+    return [{"path": r["path"], "created_at": r["created_at"]} for r in rows]
+
+
+@app.post("/api/cwd-history")
+async def upsert_cwd_history(path: str = Query(...)):
+    path = path.strip()
+    if not path: return {"ok": True}
+    now = time.time()
+    with db_connect() as conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS cwd_history (
+                id TEXT PRIMARY KEY, path TEXT NOT NULL UNIQUE, created_at REAL NOT NULL
+            )
+        """)
+        existing = conn.execute("SELECT id FROM cwd_history WHERE path = ?", (path,)).fetchone()
+        if existing:
+            conn.execute("UPDATE cwd_history SET created_at = ? WHERE path = ?", (now, path))
+        else:
+            conn.execute("INSERT INTO cwd_history (id, path, created_at) VALUES (?, ?, ?)", (uuid.uuid4().hex, path, now))
+    return {"ok": True}
+
+
+@app.delete("/api/cwd-history/{path:path}")
+async def delete_cwd_history(path: str):
+    decoded = urllib.request.unquote(path)
+    with db_connect() as conn:
+        conn.execute("DELETE FROM cwd_history WHERE path = ?", (decoded,))
+    return {"ok": True}
+
+
+@app.post("/api/cwd-history/clear")
+async def clear_cwd_history():
+    with db_connect() as conn:
+        conn.execute("DELETE FROM cwd_history")
+    return {"ok": True}
+
+
 app.mount("/uploads", StaticFiles(directory=str(UPLOADS_DIR)), name="uploads")
+app.mount("/js", StaticFiles(directory=str(STATIC_DIR / "js")), name="js")
 
 
 class _TextExtractor(HTMLParser):
